@@ -398,9 +398,19 @@ public sealed class RuntimeSmokeTests
         AssertSoundReadout(master, "主音量");
         AssertSoundReadout(music, "音乐音量");
         AssertSoundReadout(effects, "音效音量");
-        Assert.Greater(master.transform.GetSiblingIndex(),
-            GetPrivateField<Button>(ui, "_settingsBackBtn")
-                .transform.GetSiblingIndex());
+        Button back = GetPrivateField<Button>(ui, "_settingsBackBtn");
+        GameObject settingsPanel = GetPrivateField<GameObject>(
+            ui, "_settingsPanel");
+        RectTransform safeArea = GetPrivateField<RectTransform>(
+            ui, "_safeAreaRoot");
+        RectTransform backRect = back.GetComponent<RectTransform>();
+        Assert.AreSame(settingsPanel.transform, back.transform.parent,
+            "Settings back must stay outside the scroll content.");
+        Assert.AreEqual(new Vector2(0f, 1f), backRect.anchorMin);
+        Assert.AreEqual(new Vector2(0f, 1f), backRect.anchorMax);
+        Assert.AreEqual(new Vector2(0f, 1f), backRect.pivot);
+        Assert.AreEqual(new Vector2(24f, -24f), backRect.anchoredPosition);
+        AssertButtonVisibleAndRaycastable(back, safeArea);
     }
 
     [UnityTest]

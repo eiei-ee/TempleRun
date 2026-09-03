@@ -409,7 +409,8 @@ public sealed class ColdWhiteFortressSampleTests
     {
         Bounds bounds = RendererBounds(road);
         Renderer graphite = FindGraphiteRenderer(road);
-        Assert.AreEqual(0.10f, graphite.bounds.max.y, 0.04f,
+        Assert.AreEqual(TrackGeometryStandards.AuthoredRoadSurfaceTopY,
+            graphite.bounds.max.y, 0.04f,
             "The authored graphite sits at the formal collision surface.");
         Assert.LessOrEqual(bounds.max.y, 0.36f);
         Assert.GreaterOrEqual(bounds.min.y, -0.50f);

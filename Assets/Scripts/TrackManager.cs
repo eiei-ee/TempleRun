@@ -22,6 +22,7 @@ public class TrackManager : MonoBehaviour
     public const float PredictionGateRibbonWidth = 1.15f;
     public const float PredictionGateRibbonLength = 2.4f;
     public const float PredictionGateDecisionBandWidth = 1.45f;
+    public const float PredictionGateSurfaceClearance = 0.01f;
     public const string PredictionGateVisualRootName =
         "PredictionGateVisual";
     public const string TurnInnerCornerCapName = "TurnInnerCornerCap";
@@ -1062,7 +1063,12 @@ public class TrackManager : MonoBehaviour
 
         var root = new GameObject(PredictionGateVisualRootName);
         root.transform.SetParent(segment.transform, false);
-        root.transform.localPosition = new Vector3(0f, 0f,
+        // The authored graphite road is above the physics plane. Rest each
+        // marker on a shared visible surface instead of burying it underneath
+        // the opaque road mesh.
+        root.transform.localPosition = new Vector3(0f,
+            TrackGeometryStandards.AuthoredRoadSurfaceTopY
+            + PredictionGateSurfaceClearance,
             PredictionGateVisualLocalZ(gate.commitDistance,
                 gate.resolveDistance, segmentStart, segmentLength));
 
@@ -1077,14 +1083,17 @@ public class TrackManager : MonoBehaviour
                 (lane.physicalLane - 1) * laneDistance, 0f, 0f);
             laneRoot.transform.localScale = Vector3.one * finalScale;
             Color color = PredictionGateRoleColor(lane.role);
+            const float ribbonHeight = 0.045f;
+            const float decisionBandHeight = 0.065f;
             CreatePredictionGatePart(laneRoot.transform, "ApproachRibbon",
-                new Vector3(0f, 0.028f,
+                new Vector3(0f, ribbonHeight * 0.5f,
                     -PredictionGateRibbonLength * 0.5f),
-                new Vector3(PredictionGateRibbonWidth, 0.045f,
+                new Vector3(PredictionGateRibbonWidth, ribbonHeight,
                     PredictionGateRibbonLength), color);
             CreatePredictionGatePart(laneRoot.transform, "DecisionBand",
-                new Vector3(0f, 0.05f, 0f),
-                new Vector3(PredictionGateDecisionBandWidth, 0.065f,
+                new Vector3(0f, decisionBandHeight * 0.5f, 0f),
+                new Vector3(PredictionGateDecisionBandWidth,
+                    decisionBandHeight,
                     0.24f), color);
         }
     }

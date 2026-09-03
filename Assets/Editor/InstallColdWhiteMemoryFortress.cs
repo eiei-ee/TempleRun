@@ -18,7 +18,6 @@ public static class InstallColdWhiteMemoryFortress
     private const string MaterialRoot = PrefabRoot + "Materials/";
     private const string RoadMaterialPath =
         "Assets/Resources/Materials/EchoRoad.mat";
-    private const float RoadSurfaceTopY = 0.10f;
     private const float RoadBoundsTolerance = 0.20f;
     private static readonly string[] ModelNames =
     {
@@ -578,7 +577,8 @@ public static class InstallColdWhiteMemoryFortress
         Bounds bounds = RendererBounds(road);
         Renderer graphite = GraphiteRenderer(road);
         Vector3 delta = new Vector3(-bounds.center.x,
-            RoadSurfaceTopY - graphite.bounds.max.y, -bounds.center.z);
+            TrackGeometryStandards.AuthoredRoadSurfaceTopY
+            - graphite.bounds.max.y, -bounds.center.z);
         road.transform.position += delta;
         ValidateStraightRoadBounds(road, road.name);
     }
@@ -597,7 +597,8 @@ public static class InstallColdWhiteMemoryFortress
         Renderer graphite = GraphiteRenderer(road);
         Vector3 delta = new Vector3(
             targetCenter.x - bounds.center.x,
-            RoadSurfaceTopY - graphite.bounds.max.y,
+            TrackGeometryStandards.AuthoredRoadSurfaceTopY
+            - graphite.bounds.max.y,
             targetCenter.z - bounds.center.z);
         road.transform.position += delta;
         ValidateRightTurnRoadBounds(road, road.name);
@@ -742,7 +743,8 @@ public static class InstallColdWhiteMemoryFortress
     private static void ValidateRoadSurfaceHeight(GameObject road,
         Bounds bounds, string label)
     {
-        RequireNear(GraphiteRenderer(road).bounds.max.y, RoadSurfaceTopY,
+        RequireNear(GraphiteRenderer(road).bounds.max.y,
+            TrackGeometryStandards.AuthoredRoadSurfaceTopY,
             0.04f, label + " graphite surface top");
         if (bounds.max.y > 0.36f || bounds.min.y < -0.50f)
         {

@@ -46,6 +46,11 @@ public sealed class SingleContractProductionUiTests
             Assert.GreaterOrEqual(obstacleLocalZ - root.localPosition.z,
                 TrackManager.PredictionGateMinimumObstacleClearance,
                 "A cross-segment marker must not be clamped against its obstacle.");
+            Assert.AreEqual(
+                TrackGeometryStandards.AuthoredRoadSurfaceTopY
+                + TrackManager.PredictionGateSurfaceClearance,
+                root.localPosition.y, 0.0001f,
+                "Route markers must start above the authored road surface.");
             Collider[] colliders = root.GetComponentsInChildren<Collider>(true);
             for (int index = 0; index < colliders.Length; index++)
                 Assert.IsFalse(colliders[index].enabled,
@@ -71,6 +76,18 @@ public sealed class SingleContractProductionUiTests
                     TrackManager.PredictionGateDecisionBandWidth,
                     decisionBand.localScale.x, 0.0001f,
                     "The decision band should leave visible road on both sides.");
+                Assert.GreaterOrEqual(
+                    root.localPosition.y + ribbon.localPosition.y
+                    - ribbon.localScale.y * 0.5f,
+                    TrackGeometryStandards.AuthoredRoadSurfaceTopY
+                    + TrackManager.PredictionGateSurfaceClearance - 0.0001f,
+                    "The approach ribbon must not be buried by the road mesh.");
+                Assert.GreaterOrEqual(
+                    root.localPosition.y + decisionBand.localPosition.y
+                    - decisionBand.localScale.y * 0.5f,
+                    TrackGeometryStandards.AuthoredRoadSurfaceTopY
+                    + TrackManager.PredictionGateSurfaceClearance - 0.0001f,
+                    "The decision band must not be buried by the road mesh.");
                 Assert.IsNull(lane.Find("LeftPost"));
                 Assert.IsNull(lane.Find("RightPost"));
                 Assert.IsNull(lane.Find("TopBeam"));

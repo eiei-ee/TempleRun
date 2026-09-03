@@ -109,7 +109,7 @@ public class GameStateTests
     }
 
     [Test]
-    public void FirstCollisionRecoversAndSecondCollisionEndsRun()
+    public void RecoveryWindowProtectsBeforeSecondCollisionEndsRun()
     {
         GameManager manager = Create<GameManager>("GameManager");
         manager.StartGame();
@@ -118,8 +118,66 @@ public class GameStateTests
         Assert.AreEqual(1, manager.CollisionStrikes);
         Assert.Greater(manager.CollisionRecoveryTimeRemaining, 0f);
 
+        Assert.IsTrue(manager.TryRecoverFromCollision(),
+            "Contacts during resynchronization must not consume another strike.");
+        Assert.AreEqual(1, manager.CollisionStrikes);
+
+        InvokePrivate(manager, "AdvanceRunSpeed",
+            manager.CollisionRecoveryDuration);
         Assert.IsFalse(manager.TryRecoverFromCollision());
         Assert.AreEqual(2, manager.CollisionStrikes);
+    }
+
+    [TestCase(11.68f, 25)]
+    [TestCase(16.72f, 1)]
+    [TestCase(16.72f, 75)]
+    [TestCase(16.72f, 150)]
+    [TestCase(20.08f, 25)]
+    [TestCase(24f, 25)]
+    public void CollisionRecoveryReturnsToNoHitSpeedCurve(
+        float preImpactSpeed, int steps)
+    {
+        GameManager manager = Create<GameManager>("GameManager");
+        manager.StartGame();
+        SetPrivateField(manager, "<CurrentSpeed>k__BackingField",
+            preImpactSpeed);
+        float expectedRecoveredSpeed = Mathf.Min(manager.maxSpeed,
+            preImpactSpeed + manager.speedIncreaseRate
+            * manager.CollisionRecoveryDuration);
+
+        Assert.IsTrue(manager.TryRecoverFromCollision());
+        float speedAfterImpact = manager.CurrentSpeed;
+        float baselineDistance = 0f;
+        float recoveredDistance = 0f;
+        float stepDuration = manager.CollisionRecoveryDuration / steps;
+        for (int step = 0; step < steps; step++)
+        {
+            float baselineSpeed = Mathf.Min(manager.maxSpeed,
+                preImpactSpeed + manager.speedIncreaseRate
+                * stepDuration * (step + 1));
+            float recoveryDistanceAdjustment = (float)InvokePrivate(
+                manager, "AdvanceRunSpeed", stepDuration);
+            baselineDistance += baselineSpeed * stepDuration;
+            recoveredDistance += manager.CurrentSpeed * stepDuration
+                                 - recoveryDistanceAdjustment;
+        }
+
+        Assert.AreEqual(0f, manager.CollisionRecoveryTimeRemaining, 0.0001f);
+        Assert.AreEqual(expectedRecoveredSpeed, manager.CurrentSpeed, 0.0001f,
+            "Recovery must rejoin the speed curve that existed before impact.");
+        float expectedDistanceLoss = 0.5f
+            * (preImpactSpeed - speedAfterImpact)
+            * manager.CollisionRecoveryDuration;
+        Assert.AreEqual(expectedDistanceLoss,
+            baselineDistance - recoveredDistance, 0.001f,
+            "Recovery distance loss must not depend on frame rate.");
+        float minimumConfidenceTwoCounterReward = 2f
+            * PredictionGateEvaluator.CounterSuccessPlayerSeconds
+            * preImpactSpeed
+            * PredictionGateEvaluator.MinimumConfidenceScale;
+        Assert.LessOrEqual(baselineDistance - recoveredDistance,
+            minimumConfidenceTwoCounterReward,
+            "One recoverable collision must remain repayable by two counter successes.");
     }
 
     [Test]

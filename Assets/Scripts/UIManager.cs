@@ -575,9 +575,12 @@ public class UIManager : MonoBehaviour
             EchoRunAccessibility.SetReducedMotion(!EchoRunAccessibility.ReducedMotion));
         RefreshAccessibilityButtons();
 
-        _settingsBackBtn = MakeButton("SettingsBackBtn", c, "返回", 34,
-            new Vector2(0.5f, 0.015f), new Vector2(280, 76),
+        _settingsBackBtn = MakeButton("SettingsBackBtn",
+            _settingsPanel.transform, "返回", 34,
+            new Vector2(0f, 1f), new Vector2(280, 76),
             SurfaceRaised, TextMuted);
+        SetTopLeftButtonLayout(_settingsBackBtn, new Vector2(280f, 76f));
+        _settingsBackBtn.transform.SetAsLastSibling();
         _settingsBackBtn.onClick.AddListener(HideSettings);
 
         // Create the three sound readouts after every other setting label.
@@ -1974,8 +1977,9 @@ public class UIManager : MonoBehaviour
             ? new Vector2(230f, 104f) : new Vector2(210f, 60f), largeTargets, portrait));
         SetButtonSize(_reducedMotionBtn, TouchButtonSize(portrait
             ? new Vector2(250f, 104f) : new Vector2(230f, 60f), largeTargets, portrait));
-        SetButtonSize(_settingsBackBtn, TouchButtonSize(portrait
-            ? new Vector2(300f, 104f) : new Vector2(280f, 76f), largeTargets, portrait));
+        SetTopLeftButtonLayout(_settingsBackBtn, TouchButtonSize(portrait
+            ? new Vector2(300f, 104f) : new Vector2(280f, 76f),
+            largeTargets, portrait));
         SetButtonSize(_characterBackBtn, TouchButtonSize(portrait
             ? new Vector2(300f, 104f) : new Vector2(280f, 76f), largeTargets, portrait));
 
@@ -2352,6 +2356,17 @@ public class UIManager : MonoBehaviour
     {
         if (button == null) return;
         button.GetComponent<RectTransform>().sizeDelta = size;
+    }
+
+    static void SetTopLeftButtonLayout(Button button, Vector2 size)
+    {
+        if (button == null) return;
+        RectTransform rt = button.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(0f, 1f);
+        rt.pivot = new Vector2(0f, 1f);
+        rt.sizeDelta = size;
+        rt.anchoredPosition = new Vector2(24f, -24f);
     }
 
     static bool RequiresLargeTouchTargets()

@@ -84,6 +84,7 @@ public class GameManager : MonoBehaviour
     private PlayerController _telemetryPlayer;
     private int _lastBaseScore;
     private float _powerUpBonusScore;
+    private float _collisionRecoverySpeedDebt;
     private bool _telemetryFinished;
     private SingleContractValidationConfig
         _activeSingleContractValidationConfig =
@@ -209,10 +210,9 @@ public class GameManager : MonoBehaviour
         if (State != GameState.Playing || IsDeathSequence) return;
 
         RunElapsed += Time.deltaTime;
-        CollisionRecoveryTimeRemaining = Mathf.Max(0f,
-            CollisionRecoveryTimeRemaining - Time.deltaTime);
-        CurrentSpeed = Mathf.Min(CurrentSpeed + speedIncreaseRate * Time.deltaTime, maxSpeed);
-        _distanceTraveled += CurrentSpeed * Time.deltaTime;
+        float recoveryDistanceAdjustment = AdvanceRunSpeed(Time.deltaTime);
+        _distanceTraveled += Mathf.Max(0f,
+            CurrentSpeed * Time.deltaTime - recoveryDistanceAdjustment);
         if (CourseDistance > 0f)
             _distanceTraveled = Mathf.Min(_distanceTraveled, CourseDistance);
 
@@ -328,6 +328,7 @@ public class GameManager : MonoBehaviour
         RunElapsed = 0f;
         CollisionStrikes = 0;
         CollisionRecoveryTimeRemaining = 0f;
+        _collisionRecoverySpeedDebt = 0f;
         _telemetryFinished = false;
         GameplayBalance balance = GameBalanceConfig.Current.gameplay;
         ActiveEchoIdentity singleContractIdentity = IsSingleContractRun
@@ -461,15 +462,59 @@ public class GameManager : MonoBehaviour
     public bool TryRecoverFromCollision()
     {
         if (State != GameState.Playing || IsDeathSequence) return false;
+        if (CollisionRecoveryTimeRemaining > 0f) return true;
         CollisionStrikes++;
         if (CollisionStrikes >= MaximumCollisionStrikes) return false;
 
-        CurrentSpeed = Mathf.Max(startSpeed * 0.75f, CurrentSpeed * 0.55f);
+        float speedBeforeImpact = CurrentSpeed;
+        CurrentSpeed = Mathf.Max(startSpeed * 0.75f,
+            speedBeforeImpact * 0.55f);
+        _collisionRecoverySpeedDebt = Mathf.Max(0f,
+            speedBeforeImpact - CurrentSpeed);
         CollisionRecoveryTimeRemaining = CollisionRecoveryDuration;
         InputManager.Instance?.ClearInput();
         AIRunTelemetry.RecordEvent("player_collision_recovery",
             CollisionStrikes, -1, CurrentSpeed, CollisionRecoveryTimeRemaining);
         return true;
+    }
+
+    private float AdvanceRunSpeed(float deltaTime)
+    {
+        float elapsed = Mathf.Max(0f, deltaTime);
+        float recoveryTime = CollisionRecoveryTimeRemaining;
+        float recoveryElapsed = Mathf.Min(elapsed, recoveryTime);
+        float distanceAdjustment = 0f;
+        if (recoveryTime > 0f && _collisionRecoverySpeedDebt > 0f)
+        {
+            float debtBefore = _collisionRecoverySpeedDebt;
+            float baselineSpeed = Mathf.Min(maxSpeed,
+                CurrentSpeed + debtBefore
+                + speedIncreaseRate * recoveryElapsed);
+            float debtAfter = debtBefore
+                              * Mathf.Clamp01((recoveryTime - recoveryElapsed)
+                                              / recoveryTime);
+            CurrentSpeed = Mathf.Max(0f, baselineSpeed - debtAfter);
+            _collisionRecoverySpeedDebt = debtAfter;
+            distanceAdjustment = 0.5f * (debtBefore - debtAfter)
+                                 * recoveryElapsed;
+        }
+        else
+        {
+            CurrentSpeed = Mathf.Min(CurrentSpeed
+                                     + speedIncreaseRate * recoveryElapsed,
+                maxSpeed);
+        }
+
+        CollisionRecoveryTimeRemaining = Mathf.Max(0f,
+            recoveryTime - elapsed);
+        CurrentSpeed = Mathf.Min(CurrentSpeed + speedIncreaseRate
+                                 * (elapsed - recoveryElapsed), maxSpeed);
+        if (CollisionRecoveryTimeRemaining <= 0.0001f)
+        {
+            CollisionRecoveryTimeRemaining = 0f;
+            _collisionRecoverySpeedDebt = 0f;
+        }
+        return distanceAdjustment;
     }
 
     System.Collections.IEnumerator DeathSequenceCoroutine()

@@ -144,6 +144,15 @@ public sealed class ActionFeedbackAudioVfxTests
     }
 
     [Test]
+    public void CoinAbsorbLengthDoesNotGrowWithAirbornePickupVelocity()
+    {
+        Assert.AreEqual(2.4f,
+            ParticleManager.ResolveCoinAbsorbLengthScale(), 0.0001f);
+        Assert.AreEqual(0f,
+            ParticleManager.ResolveCoinAbsorbVelocityScale(), 0.0001f);
+    }
+
+    [Test]
     public void LandingUsesLowCyanBackwardStreaksInsteadOfCrossingWhiteBurst()
     {
         Assert.AreEqual(1,

@@ -46,8 +46,9 @@ public class ParticleManager : MonoBehaviour
         ParticleSystemRenderer absorbRenderer =
             _coinAbsorbPS.GetComponent<ParticleSystemRenderer>();
         absorbRenderer.renderMode = ParticleSystemRenderMode.Stretch;
-        absorbRenderer.lengthScale = 2.4f;
-        absorbRenderer.velocityScale = 0.18f;
+        absorbRenderer.lengthScale = ResolveCoinAbsorbLengthScale();
+        absorbRenderer.velocityScale = ResolveCoinAbsorbVelocityScale();
+        absorbRenderer.cameraVelocityScale = 0f;
         _dustPS  = CreateParticleSystem("DustFX",  new Color(0.16f, 0.32f, 0.42f), 0.25f, 1.5f, 5);
         _deathPS = CreateParticleSystem("DeathFX", new Color(1f, 0.34f, 0.30f), 0.5f, 4f, 30);
         _trailPS = CreateParticleSystem("TrailFX", new Color(0.12f, 0.76f, 1f), 0.62f, 1f, 12);
@@ -122,6 +123,19 @@ public class ParticleManager : MonoBehaviour
     public void EmitCoin(Vector3 pos)
     {
         EmitCoin(pos, pos + Vector3.up * 0.7f);
+    }
+
+    public static float ResolveCoinAbsorbLengthScale()
+    {
+        return 2.4f;
+    }
+
+    public static float ResolveCoinAbsorbVelocityScale()
+    {
+        // The particle already reaches its target through its velocity. Letting
+        // that velocity also scale the renderer turns airborne pickups into a
+        // long rectangular beam instead of the intended short absorb streak.
+        return 0f;
     }
 
     public void EmitCoin(Vector3 pos, Vector3 target)
