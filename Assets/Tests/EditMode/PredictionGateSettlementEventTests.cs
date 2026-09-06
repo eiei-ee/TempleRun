@@ -46,6 +46,48 @@ public sealed class PredictionGateSettlementEventTests
             "The event must preserve the authoritative settlement semantics.");
     }
 
+    [TestCase(PredictionGateRole.Counter, GateExecutionReason.Collision,
+        SingleContractInstantFeedback.CounterFailed)]
+    [TestCase(PredictionGateRole.Predicted, GateExecutionReason.Collision,
+        SingleContractInstantFeedback.ExecutionIncomplete)]
+    [TestCase(PredictionGateRole.Counter, GateExecutionReason.Unresolved,
+        SingleContractInstantFeedback.ObservationInconclusive)]
+    public void FailedExecutionDoesNotBecomePredictionSuccess(
+        PredictionGateRole role, GateExecutionReason reason,
+        SingleContractInstantFeedback expected)
+    {
+        PredictionGateSettlement settlement = PredictionGateEvaluator.Evaluate(
+            1, role, GateExecutionOutcome.Hit, 20f, 1f, reason);
+        Assert.AreEqual(expected,
+            AIShadowRunner.FeedbackForSingleContractSettlement(true, settlement));
+        Assert.Less(settlement.signedLeadMeters, 0f,
+            "A more precise observation must not silently change racing penalties.");
+    }
+
+    [Test]
+    public void RelearnKeepsGateResultAndPublishesOneFeedbackSequencePerGate()
+    {
+        SingleContractFlow flow = CreateFlowWithCounterSuccess();
+        ResolveCounter(flow, 1);
+        _runnerObject = new GameObject("AIShadowRunner Combined Feedback Test");
+        _runnerObject.SetActive(false);
+        AIShadowRunner runner = _runnerObject.AddComponent<AIShadowRunner>();
+        SetPrivateField(runner, "_activeGameplayFlowMode", GameplayFlowMode.SingleContract);
+        SetPrivateField(runner, "_singleContractFlow", flow);
+        SetPrivateField(runner, "_runAdaptationState", new RunAdaptationState());
+        typeof(AIShadowRunner).GetProperty("HasActiveOpponent")
+            .GetSetMethod(true).Invoke(runner, new object[] { true });
+
+        InvokePrivate(runner, "ConsumeSingleContractSettlements");
+        Assert.AreEqual(SingleContractInstantFeedback.RewriteSucceeded,
+            runner.SingleContractFeedback);
+        Assert.IsTrue(runner.SingleContractFeedbackRelearned);
+        Assert.AreEqual(2, runner.SingleContractFeedbackSequence,
+            "The second gate's result and relearn must be one notification.");
+        InvokePrivate(runner, "ConsumeSingleContractSettlements");
+        Assert.AreEqual(2, runner.SingleContractFeedbackSequence);
+    }
+
     private static SingleContractFlow CreateFlowWithCounterSuccess()
     {
         var flow = new SingleContractFlow(
@@ -61,18 +103,24 @@ public sealed class PredictionGateSettlementEventTests
             generation = 3
         });
 
-        PredictionGateDefinition definition = flow.GetGate(0).Definition;
+        ResolveCounter(flow, 0);
+        return flow;
+    }
+
+    private static void ResolveCounter(SingleContractFlow flow, int index)
+    {
+        PredictionGateDefinition definition = flow.GetGate(index).Definition;
         int counterLane = FindLaneForRole(
             definition, PredictionGateRole.Counter);
         flow.Tick(new EchoRunFrame
         {
-            elapsedTime = 12f,
+            elapsedTime = 12f + index * 14f,
             playerDistance = definition.commitDistance,
             currentSpeed = 20f,
             playerLane = counterLane
         });
         Assert.AreEqual(PredictionGateLifecycle.ChoiceCommitted,
-            flow.GetGate(0).State);
+            flow.GetGate(index).State);
         GateTransitionResult result = flow.ResolveObstaclePassed(
             new GateObstacleEvent
             {
@@ -81,7 +129,6 @@ public sealed class PredictionGateSettlementEventTests
                 physicalLane = counterLane
             });
         Assert.AreEqual(GateTransitionResult.Applied, result);
-        return flow;
     }
 
     private static PredictionGateDistanceWindow[] CreateWindows()

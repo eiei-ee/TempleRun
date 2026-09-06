@@ -130,6 +130,9 @@ public struct EchoRunFrame
     public float playerDistance;
     public float remainingDistance;
     public int playerLane;
+    public bool hasLateralEvidence;
+    public float lateralOffset;
+    public bool laneChangeInProgress;
 }
 
 public struct GateChoice
@@ -138,6 +141,9 @@ public struct GateChoice
     public int physicalLane;
     public float routeDistance;
     public float reactionTime;
+    public bool hasLateralEvidence;
+    public float lateralOffset;
+    public bool laneChangeInProgress;
 }
 
 public struct GateObstacleEvent

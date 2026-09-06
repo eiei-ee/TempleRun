@@ -9,14 +9,17 @@ public sealed class EchoHudPresenter : MonoBehaviour
     private float _announcementUntil;
     private float _feedbackUntil;
     private int _lastFeedbackSequence = -1;
+    private float _singleContractFeedbackStartedAt;
+    private string _singleContractFeedbackText = "";
+    private Color _singleContractFeedbackColor;
+    private int _singleContractFeedbackPriority;
+    private bool _hasSingleContractFeedback;
+    private bool _discardPendingSingleContractFeedback;
     private bool _presentingSingleContract;
     private bool _hasSingleContractVisualState;
     private SingleContractVisualState _lastSingleContractVisualState;
     private bool _lastSingleContractOpeningMemory;
     private bool _lastSingleContractOpeningReplay;
-    private bool _hasSingleContractPrediction;
-    private string _lastSingleContractPredictionKey = "";
-    private int _lastSingleContractPredictionGateNumber;
 
     public void Initialize(EchoHudView view, GameManager gameManager)
     {
@@ -39,7 +42,7 @@ public sealed class EchoHudPresenter : MonoBehaviour
             ? PowerUpController.Instance.GetStatusText() : "";
         if (IsSingleContractPresentation(shadow))
         {
-            RefreshSingleContract(shadow, powerUpStatus, forceFeedback);
+            RefreshSingleContract(shadow, powerUpStatus);
             return;
         }
 
@@ -175,6 +178,10 @@ public sealed class EchoHudPresenter : MonoBehaviour
                 leadMeters = shadow != null ? shadow.PlayerLead : 0f,
                 injuries = gameManager != null
                     ? gameManager.CollisionStrikes : 0,
+                maximumCollisionStrikes = gameManager != null
+                    ? gameManager.MaximumCollisionStrikes : 2,
+                collisionRecoveryTimeRemaining = gameManager != null
+                    ? gameManager.CollisionRecoveryTimeRemaining : 0f,
                 finishRemaining = gameManager != null
                     ? gameManager.RemainingDistance : 0f,
                 powerUp = activePowerUp,
@@ -185,6 +192,8 @@ public sealed class EchoHudPresenter : MonoBehaviour
                     ? shadow.SingleContractFeedbackLeadDeltaMeters : 0f,
                 feedbackSequence = shadow != null
                     ? shadow.SingleContractFeedbackSequence : 0,
+                feedbackRelearned = shadow != null
+                                    && shadow.SingleContractFeedbackRelearned,
                 calibrationProgress = shadow != null
                     ? shadow.CurrentSingleContractCalibrationProgress
                     : default,
@@ -195,12 +204,12 @@ public sealed class EchoHudPresenter : MonoBehaviour
     public void ReleaseSingleContractVisualState()
     {
         if (_view != null) _view.StopSingleContractTransition();
-        ResetSingleContractPredictionTracking();
         EchoPhaseVisualController visual = EchoPhaseVisualController.Instance;
         if (visual != null && visual.UsesSingleContractVisualState)
             visual.ReleaseSingleContractVisualState();
         if (!_presentingSingleContract) return;
 
+        ResetSingleContractFeedback();
         _presentingSingleContract = false;
         _hasSingleContractVisualState = false;
         _lastSingleContractOpeningMemory = false;
@@ -211,9 +220,10 @@ public sealed class EchoHudPresenter : MonoBehaviour
     public void ResetRun()
     {
         if (_view != null) _view.StopSingleContractTransition();
-        ResetSingleContractPredictionTracking();
         _hasMode = false;
         _lastFeedbackSequence = -1;
+        _discardPendingSingleContractFeedback = false;
+        ResetSingleContractFeedback();
         _feedbackUntil = 0f;
         _announcementUntil = 0f;
         _hasSingleContractVisualState = false;
@@ -222,13 +232,11 @@ public sealed class EchoHudPresenter : MonoBehaviour
     }
 
     private void RefreshSingleContract(AIShadowRunner shadow,
-        string powerUpStatus, bool forceFeedback)
+        string powerUpStatus)
     {
         SingleContractHudData data = BuildSingleContractHudData(
             _gameManager, shadow, powerUpStatus);
         bool enteringSingleContract = !_presentingSingleContract;
-        if (enteringSingleContract)
-            ResetSingleContractPredictionTracking();
         bool hadPreviousState = !enteringSingleContract
                                 && _hasSingleContractVisualState;
         SingleContractVisualState previousState =
@@ -249,17 +257,6 @@ public sealed class EchoHudPresenter : MonoBehaviour
                 data.openingMemory,
                 openingChanged && !endingOpeningReplay,
                 data.openingReplay);
-        bool returningFromRelearn = hadPreviousState
-                                    && previousState
-                                    == SingleContractVisualState.RelearnPulse
-                                    && data.visualState
-                                    == SingleContractVisualState.Challenge;
-        bool emphasizePredictionChange =
-            ShouldEmphasizeSingleContractPredictionChange(
-                _hasSingleContractPrediction,
-                _lastSingleContractPredictionKey,
-                _lastSingleContractPredictionGateNumber,
-                data, emphasizeTransition, returningFromRelearn);
         if (stateChanged || openingChanged)
         {
             _presentingSingleContract = true;
@@ -276,28 +273,107 @@ public sealed class EchoHudPresenter : MonoBehaviour
         if (visual != null)
             visual.ApplySingleContractVisualState(data.visualState);
 
-        _view.PresentSingleContract(data,
-            Time.unscaledTime < _announcementUntil);
-        if (emphasizeTransition)
+        _view.PresentSingleContract(data, data.openingMemory);
+        if (emphasizeTransition && data.openingMemory)
             _view.PlaySingleContractTransition(data.visualState);
-        else if (emphasizePredictionChange)
-            _view.PlayPredictionChangeTransition();
-        TrackSingleContractPrediction(data);
         _view.SetStats(_gameManager != null ? _gameManager.Score : 0,
             _gameManager != null ? _gameManager.Distance : 0f);
 
-        if (!string.IsNullOrEmpty(data.instantFeedback)
-            && (forceFeedback
-                || data.feedbackSequence != _lastFeedbackSequence))
+        PresentSingleContractFeedback(data, Time.unscaledTime);
+    }
+
+    // Explicit time keeps event lifetime independent of refresh frequency and
+    // allows pause, replacement and expiry to be checked without a running race.
+    public void PresentSingleContractFeedback(SingleContractHudData data, float now)
+    {
+        if (_view == null) return;
+        if (_discardPendingSingleContractFeedback)
+        {
+            // A result can arrive after the final 10 Hz refresh before pause.
+            // Discard the latest pending event at resume, including events
+            // that were never displayed, rather than replaying stale copy.
+            _lastFeedbackSequence = data.feedbackSequence;
+            _discardPendingSingleContractFeedback = false;
+            ResetSingleContractFeedback();
+            return;
+        }
+        if (data.openingMemory)
         {
             _lastFeedbackSequence = data.feedbackSequence;
-            _feedbackUntil = Time.unscaledTime
-                             + EchoRunPresentation
-                                 .SingleContractFeedbackDurationSeconds;
+            ResetSingleContractFeedback();
+            return;
         }
-        _view.ShowFeedback(data.instantFeedback,
-            SingleContractFeedbackColor(data.instantFeedbackKind),
-            !data.openingMemory && Time.unscaledTime < _feedbackUntil);
+        bool currentVisible = _hasSingleContractFeedback
+                              && now - _singleContractFeedbackStartedAt
+                              < EchoRunPresentation.SingleContractFeedbackDurationSeconds;
+        if (data.feedbackSequence != _lastFeedbackSequence)
+        {
+            // Consume each event even when a more important current message
+            // suppresses it. There is no queue to replay stale feedback later.
+            _lastFeedbackSequence = data.feedbackSequence;
+            int priority = SingleContractFeedbackPriority(data);
+            if (!string.IsNullOrEmpty(data.instantFeedback)
+                && (!currentVisible || priority >= _singleContractFeedbackPriority))
+            {
+                _singleContractFeedbackStartedAt = now;
+                _singleContractFeedbackText = data.instantFeedback;
+                _singleContractFeedbackColor = SingleContractFeedbackColor(
+                    data.instantFeedbackKind);
+                _singleContractFeedbackPriority = priority;
+                _hasSingleContractFeedback = true;
+            }
+        }
+        RenderSingleContractFeedback(now);
+    }
+
+    private void RenderSingleContractFeedback(float now)
+    {
+        if (now - _singleContractFeedbackStartedAt
+            >= EchoRunPresentation.SingleContractFeedbackDurationSeconds)
+            _hasSingleContractFeedback = false;
+        _view.ShowTimedFeedback(_singleContractFeedbackText,
+            _singleContractFeedbackColor, now - _singleContractFeedbackStartedAt,
+            _hasSingleContractFeedback, EchoRunAccessibility.ReducedMotion);
+    }
+
+    private void Update()
+    {
+        // Model data refreshes at 10 Hz; the opacity envelope must still run
+        // every rendered frame so its short fade does not visibly step.
+        if (_hasSingleContractFeedback && _view != null)
+            RenderSingleContractFeedback(Time.unscaledTime);
+    }
+
+    private static int SingleContractFeedbackPriority(SingleContractHudData data)
+    {
+        if (data.feedbackRelearned
+            || data.instantFeedbackKind == SingleContractInstantFeedback.EchoRelearned)
+            return 3;
+        if (data.instantFeedbackKind == SingleContractInstantFeedback.ExecutionIncomplete
+            || data.instantFeedbackKind == SingleContractInstantFeedback.CounterFailed)
+            return 2;
+        return 1;
+    }
+
+    private void ResetSingleContractFeedback()
+    {
+        _hasSingleContractFeedback = false;
+        _singleContractFeedbackText = "";
+        _singleContractFeedbackStartedAt = 0f;
+        _singleContractFeedbackPriority = 0;
+        if (_view != null) _view.ResetFeedbackPresentation();
+    }
+
+    private void OnDisable()
+    {
+        SuspendSingleContractFeedback();
+        if (_view != null) _view.StopSingleContractTransition();
+    }
+
+    public void SuspendSingleContractFeedback()
+    {
+        _discardPendingSingleContractFeedback = true;
+        ResetSingleContractFeedback();
     }
 
     public static bool ShouldEmphasizeSingleContractTransition(
@@ -351,29 +427,6 @@ public sealed class EchoHudPresenter : MonoBehaviour
         return value.Substring(start, lineEnd - start).Trim();
     }
 
-    private void TrackSingleContractPrediction(SingleContractHudData data)
-    {
-        if (data.openingMemory) return;
-        string key = SingleContractPredictionSemanticKey(data);
-        if (string.IsNullOrEmpty(key))
-        {
-            if (data.visualState == SingleContractVisualState.Calibration)
-                ResetSingleContractPredictionTracking();
-            return;
-        }
-
-        _hasSingleContractPrediction = true;
-        _lastSingleContractPredictionKey = key;
-        _lastSingleContractPredictionGateNumber = data.predictionGateNumber;
-    }
-
-    private void ResetSingleContractPredictionTracking()
-    {
-        _hasSingleContractPrediction = false;
-        _lastSingleContractPredictionKey = "";
-        _lastSingleContractPredictionGateNumber = 0;
-    }
-
     private bool IsSingleContractPresentation(AIShadowRunner shadow)
     {
         if (_gameManager != null) return _gameManager.IsSingleContractRun;
@@ -388,8 +441,11 @@ public sealed class EchoHudPresenter : MonoBehaviour
         {
             case SingleContractInstantFeedback.PredictionHit:
             case SingleContractInstantFeedback.CounterFailed:
+            case SingleContractInstantFeedback.ExecutionIncomplete:
             case SingleContractInstantFeedback.EchoRelearned:
                 return EchoRunUITheme.HudDangerText;
+            case SingleContractInstantFeedback.ObservationInconclusive:
+                return EchoRunUITheme.HudInkMuted;
             case SingleContractInstantFeedback.RewriteSucceeded:
                 return EchoRunUITheme.HudRewardText;
             default:

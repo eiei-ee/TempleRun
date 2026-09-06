@@ -52,7 +52,9 @@ public enum SingleContractInstantFeedback
     RewriteSucceeded,
     SafePass,
     CounterFailed,
-    EchoRelearned
+    EchoRelearned,
+    ExecutionIncomplete,
+    ObservationInconclusive
 }
 
 [System.Serializable]
@@ -72,10 +74,13 @@ public struct SingleContractHudInput
     public bool predictionGateActive;
     public float leadMeters;
     public int injuries;
+    public int maximumCollisionStrikes;
+    public float collisionRecoveryTimeRemaining;
     public float finishRemaining;
     public string powerUp;
     public SingleContractInstantFeedback instantFeedback;
     public float feedbackLeadDeltaMeters;
+    public bool feedbackRelearned;
     public int feedbackSequence;
     public SingleContractCalibrationProgress calibrationProgress;
     public string result;
@@ -106,6 +111,7 @@ public struct SingleContractHudData
     public string powerUp;
     public SingleContractInstantFeedback instantFeedbackKind;
     public float feedbackLeadDeltaMeters;
+    public bool feedbackRelearned;
     public string instantFeedback;
     public int feedbackSequence;
     public bool showCalibrationProgress;
@@ -174,7 +180,14 @@ public struct EchoDuelViewData
 
 public static class EchoRunPresentation
 {
-    public const float SingleContractFeedbackDurationSeconds = 3.2f;
+    public const float SingleContractFeedbackFadeInSeconds = 0.15f;
+    public const float SingleContractFeedbackHoldSeconds = 1.7f;
+    public const float SingleContractFeedbackFadeOutSeconds = 0.35f;
+    public const float SingleContractFeedbackDurationSeconds =
+        SingleContractFeedbackFadeInSeconds + SingleContractFeedbackHoldSeconds
+        + SingleContractFeedbackFadeOutSeconds;
+    public const string SingleContractRouteGuide =
+        "红框：预测 / 青三角：反制 / 白双线：安全";
     public static EchoMenuViewData BuildMenu(int generation,
         PlayerStyleData style, int minimumJumpSamples, int minimumSlideSamples,
         EchoContractData contractPreview = null, float echoClarity = 1f)
@@ -221,9 +234,9 @@ public static class EchoRunPresentation
             return new EchoMenuViewData
             {
                 generation = "你的操作，会变成下一局的对手",
-                learned = "本机 AI 会实时观察你的选路、跳跃和滑铲",
-                rule = "多做不同动作和选路，让学习条变亮",
-                objective = "学习条亮后跑到终点，形成下一局的回声",
+                learned = "最近选路：还需要观察",
+                rule = "尝试选路、跳跃和滑铲，让回声认识你的跑法",
+                objective = "跑到终点；观察充分后形成下一局的回声",
                 primaryAction = "开始第一局"
             };
         }
@@ -238,9 +251,9 @@ public static class EchoRunPresentation
             return new EchoMenuViewData
             {
                 generation = generationText + "还在",
-                learned = "AI 还没看清你的路线习惯",
-                rule = "继续做不同动作和选路，让学习条变亮",
-                objective = "学习条亮后跑到终点；旧回声不会丢",
+                learned = "最近选路：还需要观察",
+                rule = "再跑一局补充观察；旧回声仍保留",
+                objective = "跑到终点；观察充分后更新下一局的回声",
                 primaryAction = "让它再观察一局"
             };
         }
@@ -251,9 +264,9 @@ public static class EchoRunPresentation
             return new EchoMenuViewData
             {
                 generation = generationText + "还在",
-                learned = "AI 还没看清你的路线习惯",
-                rule = "继续做不同动作和选路，让学习条变亮",
-                objective = "学习条亮后跑到终点；旧回声不会丢",
+                learned = "最近选路：还需要观察",
+                rule = "再跑一局补充观察；旧回声仍保留",
+                objective = "跑到终点；观察充分后更新下一局的回声",
                 primaryAction = "让它再观察一局"
             };
         }
@@ -261,9 +274,10 @@ public static class EchoRunPresentation
         return new EchoMenuViewData
         {
             generation = generationText,
-            learned = "它记住了：" + memory.BuildMemoryText(),
-            rule = "它猜中会抢先；连续两次骗过它，它会改猜",
-            objective = "先到终点，并把回声留在身后",
+            learned = "最近选路：" + SingleContractRouteObservation(
+                memory.preferredLane),
+            rule = "预测路线通过会让回声抢先；连续两次反制通过后改猜",
+            objective = "领先回声到终点",
             primaryAction = "挑战第" + generation + "代回声"
         };
     }
@@ -277,37 +291,37 @@ public static class EchoRunPresentation
             assessment.PreviousLane);
         string nextLane = SingleContractCognitionLaneName(
             assessment.NextLane);
-        string runEvidence = "这局你骗过它 "
+        string runEvidence = "本局反制通过 "
                              + assessment.SuccessfulCounterCount + "/"
                              + assessment.TotalGateCount + " 次 · "
                              + (assessment.RelearnStartGateNumber > 0
                                  ? "从第" + assessment.RelearnStartGateNumber
-                                   + "次选路起，它改猜了"
-                                 : "它没有改猜");
+                                   + "次选路起，后续预测已调整"
+                                 : "后续预测未调整");
 
         string nextCognition;
         switch (assessment.ChangeKind)
         {
             case EchoCognitionChangeKind.Consolidated:
-                nextCognition = "下一代更确定：压力时你偏向" + nextLane;
+                nextCognition = "下一局记录：更确定偏向" + nextLane;
                 break;
             case EchoCognitionChangeKind.Shaken:
                 nextCognition = assessment.NextMemoryPrecise
-                    ? "下一代不再确定：你仍可能偏向" + nextLane
-                    : "下一代还没看清你的路线";
+                    ? "下一局记录：仍可能偏向" + nextLane
+                    : "下一局记录：路线倾向还需要观察";
                 break;
             case EchoCognitionChangeKind.Shifted:
-                nextCognition = "下一代开始改猜：压力时你偏向" + nextLane;
+                nextCognition = "下一局记录：开始偏向" + nextLane;
                 break;
             case EchoCognitionChangeKind.Reversed:
-                nextCognition = "下一代已经改猜：压力时你偏向" + nextLane;
+                nextCognition = "下一局记录：已更新为偏向" + nextLane;
                 break;
             default:
-                nextCognition = "下一代没有改猜：仍偏向" + nextLane;
+                nextCognition = "下一局记录：仍偏向" + nextLane;
                 break;
         }
 
-        return "它原本认为：压力时你偏向" + previousLane + "\n"
+        return "此前记录：选路偏向" + previousLane + "\n"
                + runEvidence + "\n" + nextCognition;
     }
 
@@ -333,13 +347,14 @@ public static class EchoRunPresentation
         string memory = openingMemory
             ? openingReplay
                 ? BuildOpeningReplayDetail(input.openingReplayAction,
-                    input.openingReplayCount, input.memory)
-                : BuildOpeningMemoryDetail(input.memory)
+                    input.openingReplayCount)
+                : "领先它到终点"
             : showCalibrationProgress
                 ? BuildCalibrationLearningLine(input.calibrationProgress,
                     compact: true)
                 : NormalizeSingleContractMemory(input.memory);
         bool showPrediction = !openingMemory && input.showPrediction
+                              && input.predictionGateActive
                               && input.visualState
                               != SingleContractVisualState.Calibration
                               && input.predictedLane >= 0
@@ -370,6 +385,17 @@ public static class EchoRunPresentation
         }
 
         int injuries = Mathf.Max(0, input.injuries);
+        int maximumCollisionStrikes = input.maximumCollisionStrikes > 0
+            ? input.maximumCollisionStrikes : 2;
+        string injuriesText = "伤势 " + injuries + "/" + maximumCollisionStrikes;
+        if (injuries >= maximumCollisionStrikes)
+            injuriesText += " · 已出局";
+        else if (input.collisionRecoveryTimeRemaining > 0f)
+            injuriesText += " · 恢复中";
+        else if (injuries == maximumCollisionStrikes - 1)
+            // A shield or the recovery window can absorb a collision without
+            // another injury. Describe the next injury, not the next contact.
+            injuriesText += " · 再受伤即出局";
         float finishRemaining = Mathf.Max(0f, input.finishRemaining);
         string powerUp = (input.powerUp ?? "").Trim();
         string result = (input.result ?? "").Trim();
@@ -387,9 +413,7 @@ public static class EchoRunPresentation
                          == SingleContractVisualState.Calibration,
             memory = memory,
             prediction = showPrediction
-                ? BuildSingleContractPrediction(
-                    input.predictedLane, predictionGateNumber,
-                    predictionGateCount, input.predictionGateActive)
+                ? "本次预测：" + CompactSingleContractLaneName(input.predictedLane)
                 : "",
             predictionGateNumber = predictionGateNumber,
             predictionGateCount = predictionGateCount,
@@ -398,7 +422,7 @@ public static class EchoRunPresentation
             leadState = leadState,
             lead = lead,
             injuries = injuries,
-            injuriesText = "受伤次数：" + injuries,
+            injuriesText = injuriesText,
             finishRemaining = finishRemaining,
             finishRemainingText = finishRemaining > 0.01f
                 ? "终点距离：" + Mathf.CeilToInt(finishRemaining) + "米"
@@ -411,18 +435,20 @@ public static class EchoRunPresentation
                 ? SingleContractInstantFeedback.None
                 : input.instantFeedback,
             feedbackLeadDeltaMeters = input.feedbackLeadDeltaMeters,
+            feedbackRelearned = !openingMemory && input.feedbackRelearned,
             instantFeedback = SingleContractFeedbackFor(
                 openingMemory
                     ? SingleContractInstantFeedback.None
                     : input.instantFeedback,
-                input.feedbackLeadDeltaMeters),
+                input.feedbackLeadDeltaMeters,
+                !openingMemory && input.feedbackRelearned),
             feedbackSequence = Mathf.Max(0, input.feedbackSequence),
             showCalibrationProgress = showCalibrationProgress,
             calibrationProgress01 = calibrationProgress01,
             calibrationMeterText = showCalibrationProgress
                 ? input.calibrationProgress.PlayerEvidenceReady
-                    ? "学够了 · 去终点"
-                    : "学习 " + Mathf.RoundToInt(
+                    ? "观察完成"
+                    : "观察 " + Mathf.RoundToInt(
                         calibrationProgress01 * 100f) + "%"
                 : "",
             calibrationActionProgress = showCalibrationProgress
@@ -443,7 +469,7 @@ public static class EchoRunPresentation
         if (!progress.HasTargets)
         {
             return "AI 看到了你的跑法\n"
-                   + "这局观察不会带到下一局；再跑一局，它会重新观察";
+                   + "本局未形成新的回声；再跑一局，继续观察";
         }
 
         bool generationProblem = progress.finishReached
@@ -456,8 +482,8 @@ public static class EchoRunPresentation
                + " · " + (progress.finishReached
                    ? "已经到终点" : "还没到终点")
                + (generationProblem
-                   ? "\n学习条已经全亮，但回声没有形成；请再跑一局"
-                   : "\n这局观察不会带到下一局；再跑一局，它会重新观察");
+                   ? "\n观察已充分，但新回声没有形成；再跑一局，继续观察"
+                   : "\n本局未形成新的回声；再跑一局，继续观察");
     }
 
     public static string BuildSingleContractCalibrationEvidence(
@@ -469,6 +495,163 @@ public static class EchoRunPresentation
                    progress, 0, compact: false)
                + "\n" + BuildCalibrationRouteLine(
                    progress, compact: true);
+    }
+
+    // The original result remains the evidence record. These two projections
+    // let the result screen keep the record change brief without losing detail.
+    public static string BuildSingleContractResultSummary(string fullResult)
+    {
+        string[] lines = SingleContractResultLines(fullResult);
+        if (FindSingleContractResultLine(lines, "固定验收隔离失败") != null)
+            return "固定验收隔离失败\n真实身份档发生意外变化";
+        if (FindSingleContractResultLine(lines, "回声保存失败") != null
+            || FindSingleContractResultLine(lines, "身份结算保存失败") != null)
+            return "回声保存失败\n当前回声未改变";
+        if (FindSingleContractResultLine(lines, "固定验收模式 · 身份档未修改") != null
+            || FindSingleContractResultLine(lines, "真实身份档未修改") != null)
+            return "固定验收 · 身份档未修改";
+        if (FindSingleContractResultLine(lines, "回声形成遇到问题") != null
+            || FindSingleContractResultLine(lines, "观察已充分，但新回声没有形成") != null)
+            return "回声形成遇到问题\n观察已充分，新回声未形成";
+        if (FindSingleContractResultLine(lines, "本局未形成新的回声") != null)
+            return "新回声尚未形成\n再跑一局，继续观察";
+        if (FindSingleContractResultLine(lines, "这局还不足以形成下一代") != null)
+            return "下一代尚未形成\n当前回声保持不变";
+        if (FindSingleContractResultLine(lines, "下一局仍使用本代记录") != null)
+            return "下一局仍使用本代记录";
+
+        string next = FindSingleContractResultLine(lines, "下一局记录：");
+        if (next != null)
+        {
+            next = next.Substring("下一局记录：".Length);
+            string previous = FindSingleContractResultLine(lines, "此前记录：选路偏向");
+            previous = previous == null ? "" : CompactSingleContractResultLane(
+                previous.Substring("此前记录：选路偏向".Length));
+            if (next.StartsWith("已更新为偏向", System.StringComparison.Ordinal))
+            {
+                string lane = CompactSingleContractResultLane(
+                    next.Substring("已更新为偏向".Length));
+                return "回声记录：" + (string.IsNullOrEmpty(previous)
+                    ? lane : previous + " → " + lane);
+            }
+            if (next.StartsWith("开始偏向", System.StringComparison.Ordinal))
+                return "回声记录：开始" + CompactSingleContractResultLane(
+                    next.Substring("开始偏向".Length));
+            if (next.StartsWith("仍可能偏向", System.StringComparison.Ordinal))
+                return "回声记录：仍可能" + CompactSingleContractResultLane(
+                    next.Substring("仍可能偏向".Length));
+            if (next.StartsWith("更确定偏向", System.StringComparison.Ordinal))
+                return "回声记录：更确定" + CompactSingleContractResultLane(
+                    next.Substring("更确定偏向".Length));
+            if (next.StartsWith("仍偏向", System.StringComparison.Ordinal))
+                return "回声记录：仍" + CompactSingleContractResultLane(
+                    next.Substring("仍偏向".Length));
+            if (next == "路线倾向还需要观察")
+                return "回声记录：还需要观察";
+            // Preserve any future qualifier rather than turning an unfamiliar
+            // record description into a definite lane claim.
+            return "回声记录：" + next;
+        }
+
+        string memory = FindSingleContractResultLine(lines, "它记住了：");
+        if (memory != null)
+        {
+            memory = memory.Substring("它记住了：".Length);
+            if (memory == "回声记忆模糊") return "回声记录：还需要观察";
+            const string lanePrefix = "压力出现时，你偏向";
+            if (memory.StartsWith(lanePrefix, System.StringComparison.Ordinal))
+                return "回声记录：" + CompactSingleContractResultLane(
+                    memory.Substring(lanePrefix.Length));
+        }
+        foreach (string line in lines)
+            if (line.StartsWith("第", System.StringComparison.Ordinal)
+                && line.EndsWith("代回声已经形成", System.StringComparison.Ordinal))
+                return line;
+        return "";
+    }
+
+    public static string BuildSingleContractResultDetails(string fullResult,
+        string visibleTitle)
+    {
+        string[] lines = SingleContractResultLines(fullResult);
+        int start = lines.Length > 0 && string.Equals(lines[0],
+            (visibleTitle ?? "").Trim(), System.StringComparison.Ordinal) ? 1 : 0;
+        for (int index = start; index < lines.Length; index++)
+        {
+            const string choicePrefix = "关键选择：";
+            if (lines[index].StartsWith(choicePrefix, System.StringComparison.Ordinal))
+                lines[index] = "最近一次选路：" + lines[index].Substring(choicePrefix.Length);
+        }
+        return string.Join("\n", lines, start, lines.Length - start);
+    }
+
+    private static string[] SingleContractResultLines(string result)
+    {
+        return (result ?? "").Trim().Replace("\r\n", "\n").Split(
+            new[] { '\n' }, System.StringSplitOptions.RemoveEmptyEntries);
+    }
+
+    private static string FindSingleContractResultLine(string[] lines, string prefix)
+    {
+        foreach (string line in lines)
+            if (line.StartsWith(prefix, System.StringComparison.Ordinal)) return line;
+        return null;
+    }
+
+    private static string CompactSingleContractResultLane(string lane)
+    {
+        switch (lane)
+        {
+            case "左侧": return "偏左";
+            case "右侧": return "偏右";
+            case "中间": return "中路";
+            default: return lane;
+        }
+    }
+
+    public static string BuildSingleContractGateReview(GateAttempt attempt)
+    {
+        if (attempt == null || attempt.gateId <= 0
+            || attempt.committedLane < 0 || attempt.committedLane > 2)
+            return "";
+
+        string role = attempt.chosenRole == PredictionGateRole.Counter
+            ? "反制"
+            : attempt.chosenRole == PredictionGateRole.Predicted
+                ? "预测" : "安全";
+        string choice = "关键选择：提交"
+                        + CompactSingleContractLaneName(attempt.committedLane)
+                        + "（" + role + "）";
+        if (attempt.hasLateralEvidence && attempt.laneChangeInProgress)
+            choice += "，当时仍在换道";
+
+        string execution;
+        switch (attempt.executionReason)
+        {
+            case GateExecutionReason.Completed:
+                execution = "成功通过";
+                break;
+            case GateExecutionReason.Collision:
+                execution = "发生碰撞，通过未完成";
+                break;
+            case GateExecutionReason.RouteAbandoned:
+                execution = "离开原提交路线，通过未完成";
+                break;
+            case GateExecutionReason.Cancelled:
+                execution = "观察中断，通过结果未确认";
+                break;
+            case GateExecutionReason.Unresolved:
+                execution = "未取得通过证据，无法确认完成";
+                break;
+            default:
+                execution = attempt.execution == GateExecutionOutcome.Success
+                    ? "成功通过"
+                    : attempt.execution == GateExecutionOutcome.Cancelled
+                        ? "观察中断，通过结果未确认"
+                        : "未取得通过证据，无法确认完成";
+                break;
+        }
+        return choice + "\n动作结果：" + execution;
     }
 
     public static EchoHudViewData BuildHud(bool hasOpponent,
@@ -1024,34 +1207,54 @@ public static class EchoRunPresentation
         return Mathf.Max(0, value);
     }
 
-    private static string BuildSingleContractPrediction(int lane,
-        int gateNumber, int gateCount, bool gateActive)
-    {
-        string progress = gateNumber > 0 && gateCount > 0
-            ? "第" + gateNumber + "/" + gateCount + "次选路 · " : "";
-        string timing = gateActive ? "这次它猜" : "下一次它猜";
-        return progress + timing + CompactSingleContractLaneName(lane)
-               + "\n红=它猜  青=骗它  白=安全";
-    }
-
     private static string SingleContractFeedbackFor(
-        SingleContractInstantFeedback feedback, float leadDeltaMeters)
+        SingleContractInstantFeedback feedback, float leadDeltaMeters,
+        bool relearned)
     {
-        float meters = Mathf.Abs(leadDeltaMeters);
+        string message;
         switch (feedback)
         {
             case SingleContractInstantFeedback.PredictionHit:
-                return "它猜中了 · 回声 +" + meters.ToString("0.0") + "米";
+                message = "本次选择符合预测" + SingleContractLeadDelta(
+                    leadDeltaMeters);
+                break;
             case SingleContractInstantFeedback.RewriteSucceeded:
-                return "你骗过它 · 玩家 +" + meters.ToString("0.0") + "米";
+                message = "反制通过" + SingleContractLeadDelta(leadDeltaMeters);
+                break;
             case SingleContractInstantFeedback.SafePass:
-                return "安全通过 · 距离不变";
+                message = "安全通过" + SingleContractLeadDelta(leadDeltaMeters);
+                break;
             case SingleContractInstantFeedback.CounterFailed:
-                return "没骗过它 · 回声 +" + meters.ToString("0.0") + "米";
+                message = "尝试反制 · 通过未完成";
+                break;
             case SingleContractInstantFeedback.EchoRelearned:
-                return "回声改猜了 · 后续已更新";
+                return "后续预测已调整";
+            case SingleContractInstantFeedback.ExecutionIncomplete:
+                message = "通过未完成";
+                break;
+            case SingleContractInstantFeedback.ObservationInconclusive:
+                message = "通过结果未确认";
+                break;
             default:
                 return "";
+        }
+        return message + (relearned ? " · 后续预测已调整" : "");
+    }
+
+    private static string SingleContractLeadDelta(float meters)
+    {
+        if (Mathf.Abs(meters) < 0.05f) return " · 距离不变";
+        return (meters > 0f ? " · 玩家 +" : " · 回声 +")
+               + Mathf.Abs(meters).ToString("0.0") + "米";
+    }
+
+    private static string SingleContractRouteObservation(int lane)
+    {
+        switch (lane)
+        {
+            case 0: return "偏左";
+            case 2: return "偏右";
+            default: return "中路";
         }
     }
 
@@ -1091,16 +1294,6 @@ public static class EchoRunPresentation
             ? "AI 正在观察你的跑法" : normalized);
     }
 
-    private static string BuildOpeningMemoryDetail(string value)
-    {
-        string memory = (value ?? "").Trim().Replace('\n', ' ');
-        memory = TrimPrefix(memory, "回声记忆：");
-        memory = TrimPrefix(memory, "它记住了：");
-        if (string.IsNullOrEmpty(memory))
-            return "它还没看清你的路线";
-        return "它记住了：" + memory;
-    }
-
     private static bool IsOpeningReplayAction(ShadowAction action)
     {
         return action == ShadowAction.Jump || action == ShadowAction.Slide
@@ -1108,7 +1301,7 @@ public static class EchoRunPresentation
     }
 
     private static string BuildOpeningReplayDetail(ShadowAction action,
-        int count, string memory)
+        int count)
     {
         string actionText;
         switch (action)
@@ -1130,18 +1323,7 @@ public static class EchoRunPresentation
                 break;
         }
 
-        string routeHint = BuildOpeningRouteHint(memory);
-        return "上一局学到：" + actionText + "×" + Mathf.Max(1, count)
-               + routeHint;
-    }
-
-    private static string BuildOpeningRouteHint(string memory)
-    {
-        string normalized = (memory ?? "").Replace('\n', ' ');
-        if (normalized.Contains("左侧")) return " · 压力时偏左";
-        if (normalized.Contains("右侧")) return " · 压力时偏右";
-        if (normalized.Contains("中间")) return " · 压力时走中";
-        return "";
+        return "正在重演：上一局" + actionText + "×" + Mathf.Max(1, count);
     }
 
     private static string TrimPrefix(string value, string prefix)

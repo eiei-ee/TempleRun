@@ -416,7 +416,7 @@ public sealed class SingleContractRuntimeTests
         var announcement = (UnityEngine.UI.Text)GetField(view,
             "announcementText");
         Assert.AreEqual("第4代回声现身", announcement.text);
-        Assert.AreEqual("上一局学到：滑铲×4 · 压力时偏右", directive.text);
+        Assert.AreEqual("正在重演：上一局滑铲×4", directive.text);
         Assert.IsTrue(Find(hud, "HudDynamicCanvas/Announcement")
             .activeInHierarchy);
         foreach (string visiblePath in new[]
@@ -432,7 +432,7 @@ public sealed class SingleContractRuntimeTests
         foreach (string hiddenPath in new[]
                  {
                      "HudDynamicCanvas/Prediction",
-                     "HudDynamicCanvas/Feedback",
+                     "HudDynamicCanvas/FeedbackGroup/Feedback",
                      "HudDynamicCanvas/BuffGroup"
                  })
             Assert.IsFalse(Find(hud, hiddenPath).activeInHierarchy,
@@ -446,6 +446,7 @@ public sealed class SingleContractRuntimeTests
                     generation = 4,
                     memory = "压力出现时，你偏向右侧",
                     showPrediction = true,
+                    predictionGateActive = true,
                     predictedLane = 2,
                     injuries = 1,
                     finishRemaining = 900f,
@@ -463,9 +464,8 @@ public sealed class SingleContractRuntimeTests
                      "HudStaticCanvas/DistancePlate",
                      "HudStaticCanvas/CalibrationRail",
                      "HudStaticCanvas/LeadGroup",
-                     "HudDynamicCanvas/Announcement",
                      "HudDynamicCanvas/Prediction",
-                     "HudDynamicCanvas/Feedback",
+                     "HudDynamicCanvas/FeedbackGroup/Feedback",
                      "HudDynamicCanvas/BuffGroup",
                      "HudDynamicCanvas/PauseButton"
                  })
@@ -474,6 +474,60 @@ public sealed class SingleContractRuntimeTests
         Assert.IsFalse(Find(hud, "HudDynamicCanvas/Directive")
             .activeInHierarchy,
             "Frozen memory must not remain as a misleading live instruction.");
+        Assert.IsFalse(Find(hud, "HudDynamicCanvas/Announcement").activeInHierarchy,
+            "The race uses one event message instead of concurrent stage announcements.");
+    }
+
+    [UnityTest]
+    public IEnumerator FeedbackHideDropsPendingEventsAndNewRunRestartsSequence()
+    {
+        RectTransform viewport;
+        GameObject hud = CreateHud(new Vector2(1920f, 1080f), out viewport);
+        EchoHudView view = hud.GetComponent<EchoHudView>();
+        EchoHudPresenter presenter = hud.GetComponent<EchoHudPresenter>();
+        presenter.Initialize(view, null);
+        yield return null;
+
+        var data = new SingleContractHudData
+        {
+            visualState = SingleContractVisualState.Challenge,
+            feedbackSequence = 1,
+            instantFeedback = "反制通过",
+            instantFeedbackKind = SingleContractInstantFeedback.RewriteSucceeded
+        };
+        presenter.PresentSingleContractFeedback(data, Time.unscaledTime);
+        GameObject feedback = Find(hud, "HudDynamicCanvas/FeedbackGroup");
+        Assert.IsTrue(feedback.activeSelf);
+
+        // UIManager disables this hierarchy at pause, then restores it.
+        // Let real MonoBehaviour callbacks perform the reset in PlayMode.
+        hud.SetActive(false);
+        Assert.IsFalse(feedback.activeSelf,
+            "OnDisable must clear the message and its backing together.");
+        yield return null;
+        hud.SetActive(true);
+        yield return null;
+        data.feedbackSequence = 2;
+        data.instantFeedback = "暂停前尚未显示的结果";
+        presenter.PresentSingleContractFeedback(data, Time.unscaledTime);
+        Assert.IsFalse(feedback.activeSelf,
+            "The latest event missed before suspension must be consumed silently.");
+
+        data.feedbackSequence = 3;
+        data.instantFeedback = "恢复后的新结果";
+        presenter.PresentSingleContractFeedback(data, Time.unscaledTime);
+        Assert.IsTrue(feedback.activeSelf);
+        hud.SetActive(false);
+        hud.SetActive(true);
+        presenter.ResetRun();
+        data.feedbackSequence = 1;
+        data.instantFeedback = "新局首个结果";
+        presenter.PresentSingleContractFeedback(data, Time.unscaledTime);
+        Assert.IsTrue(feedback.activeSelf,
+            "The explicit new-run boundary must allow sequence one again.");
+        Assert.AreEqual(data.instantFeedback,
+            Find(hud, "HudDynamicCanvas/FeedbackGroup/Feedback")
+                .GetComponent<UnityEngine.UI.Text>().text);
     }
 
     [UnityTest]
@@ -504,7 +558,7 @@ public sealed class SingleContractRuntimeTests
         var directive = (UnityEngine.UI.Text)GetField(view,
             "directiveText");
         Assert.AreEqual("第7代回声现身", announcement.text);
-        Assert.AreEqual("它记住了：压力出现时，你偏向左侧", directive.text);
+        Assert.AreEqual("领先它到终点", directive.text);
         Assert.IsTrue(announcement.gameObject.activeInHierarchy);
         Assert.IsTrue(directive.gameObject.activeInHierarchy);
         Assert.LessOrEqual(announcement.preferredHeight,
@@ -776,6 +830,7 @@ public sealed class SingleContractRuntimeTests
                 visualState = SingleContractVisualState.Finale,
                 memory = "回声记忆：压力下偏向右侧",
                 showPrediction = true,
+                predictionGateActive = true,
                 predictedLane = 2,
                 leadMeters = 3.25f,
                 injuries = 1,
@@ -803,9 +858,8 @@ public sealed class SingleContractRuntimeTests
             "HudStaticCanvas/DistancePlate",
             "HudStaticCanvas/CalibrationRail",
             "HudStaticCanvas/LeadGroup",
-            "HudDynamicCanvas/Announcement",
             "HudDynamicCanvas/Prediction",
-            "HudDynamicCanvas/Feedback",
+            "HudDynamicCanvas/FeedbackGroup/Feedback",
             "HudDynamicCanvas/BuffGroup",
             "HudDynamicCanvas/PauseButton"
         };

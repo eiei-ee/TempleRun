@@ -62,6 +62,10 @@ public sealed class AISingleContractEventSample
     public PredictionGateRole chosenRole;
     public StrategyKey strategyKey;
     public GateExecutionOutcome execution;
+    public GateExecutionReason executionReason;
+    public bool hasLateralEvidence;
+    public float lateralOffset;
+    public bool laneChangeInProgress;
     public float reactionTime;
     public float speedAtResolution;
     public float secondsDelta;

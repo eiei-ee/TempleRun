@@ -1095,7 +1095,47 @@ public class TrackManager : MonoBehaviour
                 new Vector3(PredictionGateDecisionBandWidth,
                     decisionBandHeight,
                     0.24f), color);
+            CreatePredictionGateSymbol(laneRoot.transform, lane.role, color);
         }
+    }
+
+    // Ground symbols carry the same roles as the colors. Keep them flat and
+    // ahead of the decision band, within the existing obstacle clearance.
+    private void CreatePredictionGateSymbol(Transform lane, PredictionGateRole role,
+        Color color)
+    {
+        var symbol = new GameObject("RoleSymbol");
+        symbol.transform.SetParent(lane, false);
+        symbol.transform.localPosition = new Vector3(0f, 0f, 1.6f);
+        if (role == PredictionGateRole.Predicted)
+        {
+            PredictionGateStroke(symbol.transform, "FrameLeft", -0.65f, -0.65f, -0.65f, 0.65f, color);
+            PredictionGateStroke(symbol.transform, "FrameRight", 0.65f, -0.65f, 0.65f, 0.65f, color);
+            PredictionGateStroke(symbol.transform, "FrameNear", -0.65f, -0.65f, 0.65f, -0.65f, color);
+            PredictionGateStroke(symbol.transform, "FrameFar", -0.65f, 0.65f, 0.65f, 0.65f, color);
+        }
+        else if (role == PredictionGateRole.Counter)
+        {
+            PredictionGateStroke(symbol.transform, "TriangleLeft", -0.65f, -0.55f, 0f, 0.65f, color);
+            PredictionGateStroke(symbol.transform, "TriangleRight", 0.65f, -0.55f, 0f, 0.65f, color);
+            PredictionGateStroke(symbol.transform, "TriangleBase", -0.65f, -0.55f, 0.65f, -0.55f, color);
+        }
+        else
+        {
+            PredictionGateStroke(symbol.transform, "SafeNear", -0.65f, -0.30f, 0.65f, -0.30f, color);
+            PredictionGateStroke(symbol.transform, "SafeFar", -0.65f, 0.30f, 0.65f, 0.30f, color);
+        }
+    }
+
+    private void PredictionGateStroke(Transform parent, string name,
+        float fromX, float fromZ, float toX, float toZ, Color color)
+    {
+        Vector3 from = new Vector3(fromX, 0.04f, fromZ);
+        Vector3 to = new Vector3(toX, 0.04f, toZ);
+        Vector3 direction = to - from;
+        CreatePredictionGatePart(parent, name, (from + to) * 0.5f,
+            new Vector3(0.18f, 0.08f, direction.magnitude), color,
+            Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg);
     }
 
     public static float PredictionGateVisualLocalZ(float commitDistance,
@@ -1137,13 +1177,14 @@ public class TrackManager : MonoBehaviour
     }
 
     private void CreatePredictionGatePart(Transform parent, string name,
-        Vector3 localPosition, Vector3 localScale, Color color)
+        Vector3 localPosition, Vector3 localScale, Color color, float yaw = 0f)
     {
         GameObject part = GameObject.CreatePrimitive(PrimitiveType.Cube);
         part.name = name;
         part.transform.SetParent(parent, false);
         part.transform.localPosition = localPosition;
         part.transform.localScale = localScale;
+        part.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
         Collider collider = part.GetComponent<Collider>();
         if (collider != null)
         {

@@ -35,6 +35,7 @@ public sealed class SingleContractHudTests
                 predictedLane = 2,
                 predictionGateNumber = 2,
                 predictionGateCount = 6,
+                predictionGateActive = true,
                 leadMeters = 3.26f,
                 injuries = 2,
                 finishRemaining = 42.2f,
@@ -49,19 +50,16 @@ public sealed class SingleContractHudTests
         Assert.IsFalse(data.showMemory,
             "Frozen identity memory is an opening card, not a live route instruction.");
         Assert.AreEqual("它记住了：压力下偏向右侧", data.memory);
-        Assert.AreEqual(
-            "第2/6次选路 · 下一次它猜右路\n"
-            + "红=它猜  青=骗它  白=安全",
-            data.prediction);
+        Assert.AreEqual("本次预测：右路", data.prediction);
         Assert.AreEqual(SingleContractLeadState.PlayerLeading, data.leadState);
         Assert.AreEqual("玩家领先：3.3米", data.lead);
         Assert.AreEqual(2, data.injuries);
-        Assert.AreEqual("受伤次数：2", data.injuriesText);
+        Assert.AreEqual("伤势 2/2 · 已出局", data.injuriesText);
         Assert.AreEqual(42.2f, data.finishRemaining, 0.0001f);
         Assert.AreEqual("终点距离：43米", data.finishRemainingText);
         Assert.IsTrue(data.showPowerUp);
         Assert.AreEqual("当前补给：护盾", data.powerUp);
-        Assert.AreEqual("没骗过它 · 回声 +4.5米", data.instantFeedback);
+        Assert.AreEqual("尝试反制 · 通过未完成", data.instantFeedback);
         Assert.AreEqual(7, data.feedbackSequence);
         Assert.AreEqual("它还记得同样的你", data.result);
 
@@ -79,6 +77,73 @@ public sealed class SingleContractHudTests
                      "采样", "追学", "置信度", "路线认知"
                  })
             StringAssert.DoesNotContain(forbidden, visible);
+    }
+
+    [TestCase(0, 0, 0f, "伤势 0/2")]
+    [TestCase(1, 2, 1.25f, "伤势 1/2 · 恢复中")]
+    [TestCase(1, 2, 0f, "伤势 1/2 · 再受伤即出局")]
+    [TestCase(2, 2, 0f, "伤势 2/2 · 已出局")]
+    [TestCase(1, 3, 0f, "伤势 1/3")]
+    [TestCase(2, 3, 0f, "伤势 2/3 · 再受伤即出局")]
+    public void InjuryCopyUsesTheRealLimitAndDistinguishesRecovery(
+        int injuries, int maximumCollisionStrikes, float recoveryRemaining,
+        string expected)
+    {
+        SingleContractHudData data = EchoRunPresentation.BuildSingleContractHud(
+            new SingleContractHudInput
+            {
+                visualState = SingleContractVisualState.Challenge,
+                injuries = injuries,
+                maximumCollisionStrikes = maximumCollisionStrikes,
+                collisionRecoveryTimeRemaining = recoveryRemaining,
+                powerUp = "护盾 · 1 次"
+            });
+
+        Assert.AreEqual(expected, data.injuriesText);
+        Assert.IsTrue(data.showPowerUp,
+            "Shield protection stays visible independently of injury capacity.");
+        StringAssert.DoesNotContain("再撞", data.injuriesText,
+            "Contact during recovery or with a shield need not cause an injury.");
+    }
+
+    [Test]
+    public void PresenterFollowsRealCollisionRecoveryWithoutCountingProtectedContacts()
+    {
+        var host = new UnityEngine.GameObject("InjuryHud_Test");
+        host.SetActive(false);
+        try
+        {
+            GameManager manager = host.AddComponent<GameManager>();
+            typeof(GameManager).GetProperty("State").SetValue(
+                manager, GameState.Playing);
+            Assert.AreEqual("伤势 0/2",
+                EchoHudPresenter.BuildSingleContractHudData(manager, null, "")
+                    .injuriesText);
+
+            Assert.IsTrue(manager.TryRecoverFromCollision());
+            Assert.AreEqual("伤势 1/2 · 恢复中",
+                EchoHudPresenter.BuildSingleContractHudData(manager, null, "")
+                    .injuriesText);
+            Assert.IsTrue(manager.TryRecoverFromCollision());
+            Assert.AreEqual(1, manager.CollisionStrikes,
+                "A contact during recovery must not consume another injury.");
+
+            typeof(GameManager).GetMethod("AdvanceRunSpeed",
+                    System.Reflection.BindingFlags.Instance
+                    | System.Reflection.BindingFlags.NonPublic)
+                .Invoke(manager, new object[] { manager.CollisionRecoveryDuration });
+            Assert.AreEqual("伤势 1/2 · 再受伤即出局",
+                EchoHudPresenter.BuildSingleContractHudData(
+                    manager, null, "护盾 · 1 次").injuriesText);
+            Assert.IsFalse(manager.TryRecoverFromCollision());
+            Assert.AreEqual("伤势 2/2 · 已出局",
+                EchoHudPresenter.BuildSingleContractHudData(manager, null, "")
+                    .injuriesText);
+        }
+        finally
+        {
+            UnityEngine.Object.DestroyImmediate(host);
+        }
     }
 
     [Test]
@@ -102,7 +167,7 @@ public sealed class SingleContractHudTests
         Assert.IsTrue(data.showMemory);
         Assert.AreEqual(3, data.generation);
         Assert.AreEqual("第3代回声现身", data.openingTitle);
-        Assert.AreEqual("它记住了：压力出现时，你偏向右侧", data.memory);
+        Assert.AreEqual("领先它到终点", data.memory);
         Assert.IsEmpty(data.prediction);
         Assert.IsFalse(data.showPowerUp);
         Assert.AreEqual(SingleContractInstantFeedback.None,
@@ -127,7 +192,7 @@ public sealed class SingleContractHudTests
 
         Assert.IsTrue(data.openingReplay);
         Assert.AreEqual("第3代回声现身", data.openingTitle);
-        Assert.AreEqual("上一局学到：滑铲×4 · 压力时偏右", data.memory);
+        Assert.AreEqual("正在重演：上一局滑铲×4", data.memory);
         StringAssert.DoesNotContain("\n", data.memory);
     }
 
@@ -148,20 +213,24 @@ public sealed class SingleContractHudTests
 
         Assert.IsFalse(data.openingReplay);
         Assert.AreEqual("第2代回声现身", data.openingTitle);
-        Assert.AreEqual("它记住了：压力出现时，你偏向左侧", data.memory);
+        Assert.AreEqual("领先它到终点", data.memory);
     }
 
     [TestCase(SingleContractInstantFeedback.PredictionHit, -3.2f,
-        "它猜中了 · 回声 +3.2米")]
+        "本次选择符合预测 · 回声 +3.2米")]
     [TestCase(SingleContractInstantFeedback.RewriteSucceeded, 5.4f,
-        "你骗过它 · 玩家 +5.4米")]
+        "反制通过 · 玩家 +5.4米")]
     [TestCase(SingleContractInstantFeedback.SafePass,
         0f, "安全通过 · 距离不变")]
     [TestCase(SingleContractInstantFeedback.CounterFailed, -6.8f,
-        "没骗过它 · 回声 +6.8米")]
+        "尝试反制 · 通过未完成")]
     [TestCase(SingleContractInstantFeedback.EchoRelearned,
-        0f, "回声改猜了 · 后续已更新")]
-    public void InstantFeedbackUsesOnlyTheFivePlayerFacingMessages(
+        0f, "后续预测已调整")]
+    [TestCase(SingleContractInstantFeedback.ExecutionIncomplete,
+        -3f, "通过未完成")]
+    [TestCase(SingleContractInstantFeedback.ObservationInconclusive,
+        -3f, "通过结果未确认")]
+    public void InstantFeedbackSeparatesChoiceFromExecution(
         SingleContractInstantFeedback feedback, float leadDeltaMeters,
         string expected)
     {
@@ -243,7 +312,7 @@ public sealed class SingleContractHudTests
             });
 
         Assert.IsTrue(data.showCalibrationProgress);
-        Assert.AreEqual("学习 0%", data.calibrationMeterText);
+        Assert.AreEqual("观察 0%", data.calibrationMeterText);
         Assert.AreEqual("AI 学习 12/24 · 主动 4/6 · 种类 1/2",
             data.memory);
         Assert.AreEqual("跳 1/2 · 滑 0/2 · 受伤 1",
@@ -326,12 +395,46 @@ public sealed class SingleContractHudTests
 
         Assert.AreEqual("它记住了：压力下偏向中间", data.memory);
         Assert.IsFalse(data.showMemory);
-        Assert.AreEqual(
-            "第6/6次选路 · 这次它猜中路\n"
-            + "红=它猜  青=骗它  白=安全",
-            data.prediction);
+        Assert.AreEqual("本次预测：中路", data.prediction);
         Assert.AreEqual(SingleContractLeadState.EchoLeading, data.leadState);
         Assert.AreEqual("回声领先：4.4米", data.lead);
         Assert.AreEqual("第3代回声胜出", data.result);
+    }
+
+    [Test]
+    public void UpcomingGateDoesNotKeepAPredictionOnScreen()
+    {
+        SingleContractHudData data = EchoRunPresentation.BuildSingleContractHud(
+            new SingleContractHudInput
+            {
+                visualState = SingleContractVisualState.Challenge,
+                showPrediction = true,
+                predictedLane = 2,
+                predictionGateActive = false
+            });
+
+        Assert.IsEmpty(data.prediction);
+    }
+
+    [Test]
+    public void SameGateRelearnKeepsTheExecutionResultInOneMessage()
+    {
+        SingleContractHudData data = EchoRunPresentation.BuildSingleContractHud(
+            new SingleContractHudInput
+            {
+                visualState = SingleContractVisualState.RelearnPulse,
+                instantFeedback = SingleContractInstantFeedback.RewriteSucceeded,
+                feedbackLeadDeltaMeters = 5f,
+                feedbackRelearned = true,
+                feedbackSequence = 4
+            });
+
+        Assert.AreEqual(SingleContractInstantFeedback.RewriteSucceeded,
+            data.instantFeedbackKind);
+        Assert.IsTrue(data.feedbackRelearned);
+        Assert.AreEqual("反制通过 · 玩家 +5.0米 · 后续预测已调整",
+            data.instantFeedback);
+        StringAssert.DoesNotContain("\n", data.instantFeedback);
+        Assert.AreEqual(4, data.feedbackSequence);
     }
 }

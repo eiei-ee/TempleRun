@@ -307,7 +307,8 @@ public sealed class AIShadowSingleContractIsolationTests
         StringAssert.Contains("观察 1/6", runner.LastResult);
         StringAssert.Contains("选路 1/5", runner.LastResult);
         StringAssert.Contains("还没到终点", runner.LastResult);
-        StringAssert.Contains("这局观察不会带到下一局", runner.LastResult);
+        StringAssert.Contains("本局未形成新的回声；再跑一局，继续观察",
+            runner.LastResult);
         StringAssert.DoesNotContain("未完成", runner.LastResult);
         StringAssert.DoesNotContain("草稿", runner.LastResult);
         StringAssert.DoesNotContain("失败", runner.LastResult);

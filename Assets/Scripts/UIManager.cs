@@ -29,6 +29,7 @@ public class UIManager : MonoBehaviour
     Button _startBtn, _settingsBtn, _characterBtn;
     Text _menuProtocolText, _menuTitleText, _menuEnglishText, _menuTaglineText;
     Text _menuGenerationText, _menuLearnedText, _menuRuleText, _menuObjectiveText;
+    bool _hasStartedSingleContractRun;
 
     // ── Settings (sub-panel of menu) ──
     GameObject _settingsPanel;
@@ -77,6 +78,10 @@ public class UIManager : MonoBehaviour
     Text _finalScoreText, _highScoreText, _coinResultText, _shadowResultText;
     Text _gameOverTitleText, _gameOverStatsText;
     Button _restartBtn, _goToMenuBtn;
+    Button _resultDetailsBtn;
+    Text _resultDetailsText;
+    ScrollRect _resultDetailsScroll;
+    bool _usesCompactResult, _resultDetailsExpanded;
 
     private Font _font;
     private Font _titleFont;
@@ -213,6 +218,14 @@ public class UIManager : MonoBehaviour
         if (_duelFeedbackText != null && _duelFeedbackText.gameObject.activeSelf)
         {
             _duelFeedbackTimer -= Time.unscaledDeltaTime;
+            if (IsSingleContractPresentation(AIShadowRunner.Instance))
+            {
+                Color feedbackColor = _duelFeedbackText.color;
+                feedbackColor.a = EchoHudView.FeedbackAlpha(
+                    EchoRunPresentation.SingleContractFeedbackDurationSeconds
+                    - _duelFeedbackTimer, EchoRunAccessibility.ReducedMotion);
+                _duelFeedbackText.color = feedbackColor;
+            }
             if (_duelFeedbackTimer <= 0f)
                 _duelFeedbackText.gameObject.SetActive(false);
         }
@@ -310,17 +323,17 @@ public class UIManager : MonoBehaviour
         _menuGenerationText.fontStyle = FontStyle.Bold;
 
         _menuLearnedText = MakeBriefLine("EchoLearned",
-            "本机 AI 会实时观察你的选路、跳跃和滑铲", 0f, TextPrimary);
+            "最近选路：还需要观察", 0f, TextPrimary);
         _menuRuleText = MakeBriefLine("EchoRule",
-            "多做不同动作和选路，让学习条变亮",
+            "尝试选路、跳跃和滑铲，让回声认识你的跑法",
             0f, TextPrimary);
         _menuObjectiveText = MakeBriefLine("EchoObjective",
-            "学习条亮后跑到终点，形成下一局的回声",
+            "跑到终点；观察充分后形成下一局的回声",
             0f, Reward);
 
         _startBtn = MakeButton("StartBtn", _menuPanel.transform, "开始第一局", 28,
             new Vector2(0.19f, 0.245f), new Vector2(520f, 78f),
-            Primary, Primary, Ink);
+            EchoRunUITheme.ActionAccent, EchoRunUITheme.ActionAccentDark, Ink);
         _startBtn.onClick.AddListener(StartGameFromHome);
 
         _settingsBtn = MakeButton("SettingsBtn", _menuPanel.transform, "设置", 24,
@@ -420,7 +433,7 @@ public class UIManager : MonoBehaviour
                 portrait ? 0.545f : 0.495f, width, 54f);
         if (_menuRuleText != null)
             AnchorText(_menuRuleText.rectTransform, x,
-                portrait ? 0.475f : 0.425f, width, 54f);
+                portrait ? 0.475f : 0.425f, width, 78f);
         if (_menuObjectiveText != null)
             AnchorText(_menuObjectiveText.rectTransform, x,
                 portrait ? 0.405f : 0.355f, width, 54f);
@@ -768,6 +781,7 @@ public class UIManager : MonoBehaviour
     {
         EchoRunAccessibility.ApplyToHierarchy(_safeAreaRoot);
         RefreshAccessibilityButtons();
+        RefreshResultDetailsHeight();
     }
 
     void RefreshAccessibilityButtons()
@@ -1246,7 +1260,7 @@ public class UIManager : MonoBehaviour
                 && !string.IsNullOrEmpty(view.openingTitle)
                 ? view.openingTitle + "\n" + view.memory
                 : view.memory;
-            _contractText.gameObject.SetActive(view.showMemory);
+            _contractText.gameObject.SetActive(view.openingMemory);
         }
         if (_contractProgressText != null)
         {
@@ -1266,16 +1280,8 @@ public class UIManager : MonoBehaviour
         }
         if (_leadText != null)
         {
-            _leadText.text = view.visualState
-                             == SingleContractVisualState.Calibration
-                ? (view.showCalibrationProgress
-                    ? view.calibrationRouteProgress + "　|　"
-                      + view.calibrationActionProgress
-                      + "　|　" + view.finishRemainingText
-                    : view.injuriesText + "　|　"
-                      + view.finishRemainingText)
-                : view.lead + "　|　" + view.injuriesText
-                  + "　|　" + view.finishRemainingText;
+            _leadText.text = view.lead + "　|　" + view.injuriesText
+                            + "　|　" + view.finishRemainingText;
             _leadText.color = view.leadState
                               == SingleContractLeadState.PlayerLeading
                 ? Reward
@@ -1289,8 +1295,12 @@ public class UIManager : MonoBehaviour
 
         if (_duelFeedbackText == null
             || string.IsNullOrEmpty(view.instantFeedback)) return;
-        if (!forceFeedback
-            && view.feedbackSequence == _lastDuelFeedbackSequence) return;
+        if (view.feedbackSequence == _lastDuelFeedbackSequence)
+        {
+            if (_duelFeedbackTimer > 0f)
+                _duelFeedbackText.text = view.instantFeedback;
+            return;
+        }
 
         _lastDuelFeedbackSequence = view.feedbackSequence;
         _duelFeedbackText.text = view.instantFeedback;
@@ -1314,9 +1324,13 @@ public class UIManager : MonoBehaviour
         switch (feedback)
         {
             case SingleContractInstantFeedback.PredictionHit:
-            case SingleContractInstantFeedback.CounterFailed:
-            case SingleContractInstantFeedback.EchoRelearned:
                 return Danger;
+            case SingleContractInstantFeedback.CounterFailed:
+            case SingleContractInstantFeedback.ExecutionIncomplete:
+            case SingleContractInstantFeedback.ObservationInconclusive:
+                return TextPrimary;
+            case SingleContractInstantFeedback.EchoRelearned:
+                return Primary;
             case SingleContractInstantFeedback.RewriteSucceeded:
                 return Reward;
             default:
@@ -1456,19 +1470,23 @@ public class UIManager : MonoBehaviour
         _shadowResultText = MakeText("ShadowResult", _gameOverPanel.transform,
             "正在整理这局的回声变化", 28, TextAnchor.MiddleCenter);
         _shadowResultText.color = Primary;
-        _shadowResultText.fontStyle = FontStyle.Bold;
-        _shadowResultText.resizeTextForBestFit = true;
+        _shadowResultText.fontStyle = FontStyle.Normal;
+        _shadowResultText.resizeTextForBestFit = false;
         _shadowResultText.resizeTextMinSize = 18;
         _shadowResultText.resizeTextMaxSize = 28;
         _shadowResultText.horizontalOverflow = HorizontalWrapMode.Wrap;
         _shadowResultText.verticalOverflow = VerticalWrapMode.Truncate;
         _shadowResultText.lineSpacing = 1.05f;
-        AnchorText(_shadowResultText.GetComponent<RectTransform>(), 0.5f, 0.38f, 1160, 180);
+        Vector2 resultTextSize = UILayoutRules.GetResultTextSize(1920, 1080);
+        AnchorText(_shadowResultText.GetComponent<RectTransform>(), 0.5f, 0.40f,
+            resultTextSize.x, resultTextSize.y);
+
+        CreateResultDetails();
 
         // Restart
         _restartBtn = MakeButton("RestartBtn", _gameOverPanel.transform, "重新挑战", 30,
             new Vector2(0.5f, 0.18f), new Vector2(380, 76),
-            PrimaryStrong, Primary);
+            EchoRunUITheme.ActionAccent, EchoRunUITheme.ActionAccentDark, Ink);
         _restartBtn.onClick.AddListener(() => _gm.Restart());
 
         // Back to menu
@@ -1483,18 +1501,171 @@ public class UIManager : MonoBehaviour
             "本局结果", 48, TextAnchor.MiddleCenter);
         _gameOverTitleText.color = Danger;
         _gameOverTitleText.fontStyle = FontStyle.Bold;
-        AddOutline(_gameOverTitleText.gameObject, new Color(0.4f, 0.05f, 0f));
+        AddOutline(_gameOverTitleText.gameObject, new Color(0f, 0f, 0f, 0.45f));
         AnchorText(_gameOverTitleText.GetComponent<RectTransform>(), 0.5f, 0.81f, 700, 80);
 
         _gameOverStatsText = MakeText("GameOverStats", _gameOverPanel.transform,
-            "得分  0\n最高  0\n金币  0", 34, TextAnchor.MiddleCenter);
-        _gameOverStatsText.color = Color.white;
-        _gameOverStatsText.fontStyle = FontStyle.Bold;
+            "得分 0 · 距离 0m · 金币 0", 24, TextAnchor.MiddleCenter);
+        _gameOverStatsText.color = TextMuted;
+        _gameOverStatsText.fontStyle = FontStyle.Normal;
         _gameOverStatsText.lineSpacing = 1.05f;
         AddOutline(_gameOverStatsText.gameObject, new Color(0, 0, 0, 0.7f));
-        AnchorText(_gameOverStatsText.GetComponent<RectTransform>(), 0.5f, 0.62f, 720, 120);
+        AnchorText(_gameOverStatsText.GetComponent<RectTransform>(), 0.5f, 0.68f, 1080, 60);
 
         _gameOverPanel.SetActive(false);
+    }
+
+    void CreateResultDetails()
+    {
+        GameObject panel = new GameObject("ResultDetails", typeof(Image), typeof(ScrollRect));
+        panel.transform.SetParent(_gameOverPanel.transform, false);
+        Image background = panel.GetComponent<Image>();
+        background.color = WithAlpha(Surface, 0.96f);
+        ApplyRounded(background);
+        _resultDetailsScroll = panel.GetComponent<ScrollRect>();
+        _resultDetailsScroll.horizontal = false;
+        _resultDetailsScroll.vertical = true;
+        _resultDetailsScroll.movementType = ScrollRect.MovementType.Clamped;
+        _resultDetailsScroll.scrollSensitivity = 32f;
+
+        GameObject viewport = new GameObject("Viewport", typeof(RectTransform),
+            typeof(Image), typeof(RectMask2D));
+        viewport.transform.SetParent(panel.transform, false);
+        viewport.GetComponent<Image>().color = Color.clear;
+        RectTransform viewportRect = viewport.GetComponent<RectTransform>();
+        Stretch(viewportRect);
+        viewportRect.offsetMin = new Vector2(24f, 18f);
+        viewportRect.offsetMax = new Vector2(-28f, -18f);
+        _resultDetailsScroll.viewport = viewportRect;
+
+        _resultDetailsText = MakeText("ResultDetailsText", viewport.transform,
+            "", 22, TextAnchor.UpperLeft);
+        _resultDetailsText.color = TextMuted;
+        _resultDetailsText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        _resultDetailsText.verticalOverflow = VerticalWrapMode.Overflow;
+        _resultDetailsText.lineSpacing = 1.15f;
+        RectTransform content = _resultDetailsText.rectTransform;
+        content.anchorMin = new Vector2(0f, 1f);
+        content.anchorMax = Vector2.one;
+        content.pivot = new Vector2(0.5f, 1f);
+        content.anchoredPosition = Vector2.zero;
+        content.sizeDelta = new Vector2(0f, 260f);
+        _resultDetailsScroll.content = content;
+
+        GameObject barObject = new GameObject("Scrollbar", typeof(Image), typeof(Scrollbar));
+        barObject.transform.SetParent(panel.transform, false);
+        barObject.GetComponent<Image>().color = WithAlpha(TextMuted, 0.1f);
+        RectTransform barRect = barObject.GetComponent<RectTransform>();
+        barRect.anchorMin = new Vector2(1f, 0f);
+        barRect.anchorMax = Vector2.one;
+        barRect.offsetMin = new Vector2(-12f, 18f);
+        barRect.offsetMax = new Vector2(-6f, -18f);
+        GameObject handle = new GameObject("Handle", typeof(Image));
+        handle.transform.SetParent(barObject.transform, false);
+        Image handleImage = handle.GetComponent<Image>();
+        handleImage.color = WithAlpha(TextMuted, 0.6f);
+        RectTransform handleRect = handle.GetComponent<RectTransform>();
+        Stretch(handleRect);
+        Scrollbar scrollbar = barObject.GetComponent<Scrollbar>();
+        scrollbar.handleRect = handleRect;
+        scrollbar.targetGraphic = handleImage;
+        scrollbar.direction = Scrollbar.Direction.BottomToTop;
+        _resultDetailsScroll.verticalScrollbar = scrollbar;
+        _resultDetailsScroll.verticalScrollbarVisibility = ScrollRect.ScrollbarVisibility.AutoHide;
+
+        _resultDetailsBtn = MakeButton("ResultDetailsBtn", _gameOverPanel.transform,
+            "查看本局复盘", 22, new Vector2(0.5f, 0.265f), new Vector2(320f, 52f),
+            Color.clear, Color.clear, TextMuted);
+        _resultDetailsBtn.onClick.AddListener(ToggleResultDetails);
+        panel.SetActive(false);
+        _resultDetailsBtn.gameObject.SetActive(false);
+    }
+
+    public void PresentResultSummary(string fullResult, string title, bool singleContract)
+    {
+        _usesCompactResult = singleContract;
+        _resultDetailsExpanded = false;
+        if (_gameOverTitleText != null) _gameOverTitleText.text = title;
+        if (_shadowResultText != null)
+        {
+            _shadowResultText.resizeTextForBestFit = !singleContract;
+            _shadowResultText.fontStyle = singleContract ? FontStyle.Normal : FontStyle.Bold;
+            _shadowResultText.text = singleContract
+                ? EchoRunPresentation.BuildSingleContractResultDetails(
+                    EchoRunPresentation.BuildSingleContractResultSummary(fullResult), title)
+                : fullResult;
+        }
+        if (_resultDetailsText != null)
+            _resultDetailsText.text = singleContract
+                ? EchoRunPresentation.BuildSingleContractResultDetails(fullResult, title) : "";
+        if (_resultDetailsBtn != null)
+            _resultDetailsBtn.gameObject.SetActive(singleContract
+                && _resultDetailsText != null
+                && !string.IsNullOrWhiteSpace(_resultDetailsText.text));
+        if (_resultDetailsScroll != null)
+        {
+            _resultDetailsScroll.StopMovement();
+            _resultDetailsScroll.gameObject.SetActive(false);
+        }
+        SetButtonLabel(_resultDetailsBtn, "查看本局复盘");
+        ApplyResultSummaryLayout(Screen.width, Screen.height);
+    }
+
+    void ToggleResultDetails()
+    {
+        if (!_usesCompactResult || _resultDetailsScroll == null) return;
+        _resultDetailsExpanded = !_resultDetailsExpanded;
+        _resultDetailsScroll.gameObject.SetActive(_resultDetailsExpanded);
+        SetButtonLabel(_resultDetailsBtn,
+            _resultDetailsExpanded ? "收起本局复盘" : "查看本局复盘");
+        ApplyResultSummaryLayout(Screen.width, Screen.height);
+        if (_resultDetailsExpanded)
+        {
+            _resultDetailsScroll.StopMovement();
+            _resultDetailsScroll.verticalNormalizedPosition = 1f;
+        }
+        ScheduleTextRefresh(_gameOverPanel.transform);
+    }
+
+    void ApplyResultSummaryLayout(int width, int height)
+    {
+        if (_gameOverTitleText == null || _shadowResultText == null) return;
+        bool portrait = UILayoutRules.IsCompactPortrait(width, height);
+        bool expanded = _usesCompactResult && _resultDetailsExpanded;
+        float textWidth = portrait ? 900f : 1120f;
+        AnchorText(_gameOverTitleText.rectTransform, 0.5f,
+            _usesCompactResult ? (expanded ? 0.86f : 0.76f) : 0.81f,
+            textWidth, 96f);
+        AnchorText(_gameOverStatsText.rectTransform, 0.5f,
+            _usesCompactResult ? (expanded ? 0.78f : 0.665f) : 0.68f,
+            textWidth, 54f);
+        Vector2 summarySize = _usesCompactResult
+            ? new Vector2(textWidth, 104f) : UILayoutRules.GetResultTextSize(width, height);
+        AnchorText(_shadowResultText.rectTransform, 0.5f,
+            _usesCompactResult ? (expanded ? 0.67f : 0.54f) : 0.40f,
+            summarySize.x, summarySize.y);
+        SetButtonLayout(_restartBtn, new Vector2(0.5f,
+            _usesCompactResult ? (expanded ? 0.245f : 0.38f) : 0.18f),
+            UILayoutRules.GetRestartButtonSize(width, height, UsesTouchLayout()));
+        SetButtonLayout(_goToMenuBtn, new Vector2(0.5f,
+            _usesCompactResult ? (expanded ? 0.07f : 0.155f) : 0.07f),
+            UILayoutRules.GetMenuButtonSize(width, height, UsesTouchLayout()));
+        SetButtonLayout(_resultDetailsBtn, new Vector2(0.5f, expanded ? 0.15f : 0.265f),
+            UILayoutRules.EnsureTouchButtonSize(new Vector2(320f, 52f), UsesTouchLayout(), portrait));
+        if (_resultDetailsScroll != null)
+            AnchorText(_resultDetailsScroll.GetComponent<RectTransform>(), 0.5f,
+                0.465f, textWidth, portrait ? 460f : 290f);
+        RefreshResultDetailsHeight();
+    }
+
+    void RefreshResultDetailsHeight()
+    {
+        if (_resultDetailsScroll == null || !_resultDetailsScroll.gameObject.activeInHierarchy)
+            return;
+        Canvas.ForceUpdateCanvases();
+        _resultDetailsText.rectTransform.sizeDelta = new Vector2(0f,
+            Mathf.Max(_resultDetailsScroll.viewport.rect.height,
+                _resultDetailsText.preferredHeight + 4f));
     }
 
     // ═══════════════════════════════════════════════════
@@ -1508,6 +1679,12 @@ public class UIManager : MonoBehaviour
                                 && _pausePanel.activeSelf;
         if (state == GameState.Menu || state == GameState.GameOver)
             ReleaseSingleContractVisualState();
+        if (state != GameState.Playing)
+        {
+            _duelFeedbackTimer = 0f;
+            if (_duelFeedbackText != null)
+                _duelFeedbackText.gameObject.SetActive(false);
+        }
         if (_menuRouter != null) _menuRouter.ExitMenu();
         else
         {
@@ -1537,6 +1714,8 @@ public class UIManager : MonoBehaviour
                 SelectForNavigation(null);
                 if (!resumedFromPause)
                 {
+                    if (_gm != null && _gm.IsSingleContractRun)
+                        _hasStartedSingleContractRun = true;
                     if (_echoHudPresenter != null)
                         _echoHudPresenter.ResetRun();
                     _lastDuelFeedbackSequence = -1;
@@ -1576,8 +1755,6 @@ public class UIManager : MonoBehaviour
                             _gm, resultShadow, "");
                     singleContractResultText = resultView.result;
                 }
-                if (_shadowResultText != null)
-                    _shadowResultText.text = singleContractResultText;
                 RunEndReason resultReason = _gm != null
                     ? _gm.LastEndReason : RunEndReason.None;
                 bool wasChallenge = resultShadow != null
@@ -1650,11 +1827,13 @@ public class UIManager : MonoBehaviour
                     if (_coinResultText != null)
                         _coinResultText.text = "金币: " + _gm.Coins + "  |  总计: " + _gm.TotalCoins;
                     if (_gameOverStatsText != null)
-                        _gameOverStatsText.text = "过程指标  得分 " + _gm.Score + newRecord
-                                                   + "  ·  距离 " + _gm.Distance.ToString("0") + "m"
-                                                   + "\n金币 " + _gm.Coins
-                                                   + "  ·  历史最高 " + _gm.HighScore;
+                        _gameOverStatsText.text = "得分 " + _gm.Score
+                                                   + (_gm.IsNewHighScore ? "（新纪录）" : "")
+                                                   + (singleContractResult ? "" : " · 距离 " + _gm.Distance.ToString("0") + "m")
+                                                   + " · 金币 " + _gm.Coins;
                 }
+                PresentResultSummary(singleContractResultText,
+                    _gameOverTitleText != null ? _gameOverTitleText.text : "", singleContractResult);
                 ScheduleTextRefresh(_gameOverPanel != null
                     ? _gameOverPanel.transform : null);
                 break;
@@ -1675,12 +1854,12 @@ public class UIManager : MonoBehaviour
         string result, RunEndReason endReason, bool wasChallenge, bool won)
     {
         string safe = (result ?? "").Trim();
-        if (safe.Contains("保存失败")) return "回声保存失败";
         int newline = safe.IndexOf('\n');
         string firstLine = newline >= 0
             ? safe.Substring(0, newline).Trim() : safe;
         if (!wasChallenge)
         {
+            if (safe.Contains("保存失败")) return "回声保存失败";
             bool savedCalibration = firstLine.StartsWith("校准完成")
                                     && !safe.Contains("保存失败");
             if (savedCalibration) return "校准完成";
@@ -1793,6 +1972,11 @@ public class UIManager : MonoBehaviour
     void ShowControlHintIfNeeded()
     {
         if (_controlHint == null || _controlHintText == null) return;
+        if (IsSingleContractPresentation(AIShadowRunner.Instance))
+        {
+            _controlHint.SetActive(false);
+            return;
+        }
         bool firstCalibration = AIShadowRunner.Instance == null
                                 || AIShadowRunner.Instance.Generation <= 0;
         if (!firstCalibration)
@@ -1848,9 +2032,18 @@ public class UIManager : MonoBehaviour
             if (_menuLearnedText != null)
                 _menuLearnedText.text = singleContractView.learned;
             if (_menuRuleText != null)
-                _menuRuleText.text = singleContractView.rule;
+                _menuRuleText.text = singleContractView.rule
+                    + (!_hasStartedSingleContractRun
+                        ? "\n" + EchoRunPresentation.SingleContractRouteGuide
+                        : "");
             if (_menuObjectiveText != null)
                 _menuObjectiveText.text = singleContractView.objective;
+            if (_menuProtocolText != null)
+                _menuProtocolText.text = _hasStartedSingleContractRun
+                    ? "本机 AI · 观察选路与动作"
+                    : UsesTouchLayout()
+                        ? "左右滑动变道 · 上滑跳跃 · 下滑滑铲"
+                        : "A / D 变道 · W / 空格跳跃 · S / Ctrl 滑铲";
             SetButtonLabel(_startBtn, singleContractView.primaryAction);
             return;
         }
@@ -2042,6 +2235,7 @@ public class UIManager : MonoBehaviour
         if (_shadowResultText != null)
             _shadowResultText.rectTransform.sizeDelta =
                 UILayoutRules.GetResultTextSize(Screen.width, Screen.height);
+        ApplyResultSummaryLayout(Screen.width, Screen.height);
         LayoutMenu(portrait, largeTargets);
     }
 

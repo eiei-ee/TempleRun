@@ -165,6 +165,10 @@ public class PlayerMotionFeedbackTests
             InvokeObstacleContact(player, shieldBarrier);
             InvokeObstacleContact(player, shieldBarrier);
             InvokeObstacleContact(player, CreateBarrier("recovery", 2f));
+            // A distinct fatal impact occurs after the recovery protection
+            // expires; contacts inside that window remain recoverable.
+            InvokePrivate(manager, "AdvanceRunSpeed",
+                manager.CollisionRecoveryDuration);
             InvokeObstacleContact(player, CreateBarrier("fatal", 3f));
 
             Assert.AreEqual(3, signals.Count,

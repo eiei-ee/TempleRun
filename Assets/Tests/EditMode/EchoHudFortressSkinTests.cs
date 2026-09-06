@@ -45,7 +45,7 @@ public sealed class EchoHudFortressSkinTests
         Assert.AreEqual(EchoHudTransitionKind.Release, finale.transition);
         Assert.Less(calibration.panel.grayscale, 0.15f);
         Assert.Greater(calibration.panel.a, 0.55f);
-        Assert.Less(calibration.panel.a, 0.7f);
+        Assert.Less(calibration.panel.a, 0.9f);
         Assert.Greater(calibration.ink.grayscale, 0.8f);
     }
 
@@ -190,7 +190,7 @@ public sealed class EchoHudFortressSkinTests
         foreach (string name in new[]
                  {
                      "AnnouncementPlate", "DirectivePlate", "PredictionPlate",
-                     "FeedbackPlate", "StateAccentBar", "StateTransitionFx"
+                     "FeedbackGroup/FeedbackPlate", "StateAccentBar", "StateTransitionFx"
                  })
         {
             Transform decoration = dynamicLayer.Find(name);
@@ -239,7 +239,7 @@ public sealed class EchoHudFortressSkinTests
 
         foreach (string name in new[]
                  {
-                     "AnnouncementPlate", "DirectivePlate", "FeedbackPlate"
+                     "AnnouncementPlate", "DirectivePlate"
                  })
         {
             Image veil = dynamicLayer.Find(name).GetComponent<Image>();
@@ -256,6 +256,11 @@ public sealed class EchoHudFortressSkinTests
         Assert.Less(predictionVeil.color.grayscale, 0.15f,
             "PredictionPlate must stay dark.");
         Assert.IsFalse(predictionVeil.raycastTarget, "PredictionPlate");
+        Image feedbackVeil = dynamicLayer.Find("FeedbackGroup/FeedbackPlate")
+            .GetComponent<Image>();
+        Assert.GreaterOrEqual(feedbackVeil.color.a, 0.8f,
+            "Event text needs its own readable backing, faded with the text.");
+        Assert.IsFalse(feedbackVeil.raycastTarget);
 
         RectTransform accent = dynamicLayer.Find("StateAccentBar")
             as RectTransform;

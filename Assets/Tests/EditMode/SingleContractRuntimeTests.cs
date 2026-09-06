@@ -249,6 +249,100 @@ public sealed class SingleContractRuntimeTests
     }
 
     [Test]
+    public void CommitKeepsLateralEvidenceWhenLaterInputRedirectsThePlayer()
+    {
+        SingleContractFlow flow = CreateFixedFlow(222);
+        PredictionGateDefinition first = flow.GetGate(0).Definition;
+        int committedLane = FindLaneForRole(first, PredictionGateRole.Counter);
+        flow.Tick(new EchoRunFrame
+        {
+            elapsedTime = 12f,
+            playerDistance = first.commitDistance,
+            currentSpeed = 20f,
+            playerLane = committedLane,
+            hasLateralEvidence = true,
+            lateralOffset = 0.35f,
+            laneChangeInProgress = true
+        });
+        flow.Tick(new EchoRunFrame
+        {
+            elapsedTime = 13f,
+            playerDistance = first.resolveDistance,
+            currentSpeed = 20f,
+            playerLane = (committedLane + 1) % 3,
+            hasLateralEvidence = true,
+            lateralOffset = -1.2f,
+            laneChangeInProgress = false
+        });
+        Assert.AreEqual(GateTransitionResult.AlreadyApplied,
+            flow.TryCommitChoice(new GateChoice
+            {
+                gateId = first.gateId,
+                physicalLane = committedLane,
+                hasLateralEvidence = true,
+                lateralOffset = 99f,
+                laneChangeInProgress = false
+            }));
+
+        GateAttempt attempt = flow.GetGate(0).BuildAttempt();
+        Assert.AreEqual(committedLane, attempt.committedLane);
+        Assert.IsTrue(attempt.hasLateralEvidence);
+        Assert.AreEqual(0.35f, attempt.lateralOffset, 0.0001f);
+        Assert.IsTrue(attempt.laneChangeInProgress);
+    }
+
+    [TestCase(false, GateExecutionReason.Unresolved)]
+    [TestCase(true, GateExecutionReason.RouteAbandoned)]
+    public void MissingPassAtExitRecordsTheCauseWithoutChangingThePenalty(
+        bool changedLane, GateExecutionReason expectedReason)
+    {
+        SingleContractFlow flow = CreateFixedFlow(431);
+        CommitFirstCounterLane(flow, 20f);
+        GateObstacleEvent matching = EventForCommittedGate(flow);
+        PredictionGateDefinition first = flow.GetGate(0).Definition;
+        flow.Tick(new EchoRunFrame
+        {
+            elapsedTime = 15f,
+            playerDistance = first.exitDistance,
+            currentSpeed = 20f,
+            playerLane = changedLane
+                ? (matching.physicalLane + 1) % 3 : matching.physicalLane
+        });
+
+        PredictionGateSettlement result = flow.GetSettlement(0);
+        Assert.AreEqual(GateExecutionOutcome.Hit, result.execution);
+        Assert.AreEqual(expectedReason, result.executionReason);
+        Assert.AreEqual(expectedReason,
+            flow.GetGate(0).BuildAttempt().executionReason);
+        Assert.AreEqual(-9f, result.signedLeadMeters, 0.0001f);
+        Assert.AreEqual(GateTransitionResult.Rejected,
+            flow.ResolveObstacleHit(matching));
+        Assert.AreEqual(1, flow.SettlementCount);
+        Assert.AreEqual(expectedReason, flow.GetSettlement(0).executionReason);
+    }
+
+    [Test]
+    public void CollisionCallbackRecordsCollisionAndCannotBeRewrittenByAPass()
+    {
+        SingleContractFlow flow = CreateFixedFlow(431);
+        CommitFirstCounterLane(flow, 20f);
+        GateObstacleEvent matching = EventForCommittedGate(flow);
+
+        Assert.AreEqual(GateTransitionResult.Applied,
+            flow.ResolveObstacleHit(matching));
+        Assert.AreEqual(GateTransitionResult.Rejected,
+            flow.ResolveObstaclePassed(matching));
+        Assert.AreEqual(GateTransitionResult.Rejected,
+            flow.ResolveObstacleHit(matching));
+        Assert.AreEqual(1, flow.SettlementCount);
+        Assert.AreEqual(GateExecutionReason.Collision,
+            flow.GetSettlement(0).executionReason);
+        Assert.AreEqual(GateExecutionReason.Collision,
+            flow.GetGate(0).BuildAttempt().executionReason);
+        Assert.AreEqual(-9f, flow.AccumulatedSignedLeadMeters, 0.0001f);
+    }
+
+    [Test]
     public void NonObstacleLaneResolvesAtExitAndRecycleIsIdempotent()
     {
         SingleContractFlow flow = CreateFixedFlow(783);

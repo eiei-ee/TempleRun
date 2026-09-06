@@ -9,10 +9,10 @@ public sealed class SingleContractMenuTests
             EchoRunPresentation.BuildSingleContractMenu(null);
 
         Assert.AreEqual("你的操作，会变成下一局的对手", menu.generation);
-        Assert.AreEqual("本机 AI 会实时观察你的选路、跳跃和滑铲",
+        Assert.AreEqual("最近选路：还需要观察",
             menu.learned);
-        Assert.AreEqual("多做不同动作和选路，让学习条变亮", menu.rule);
-        Assert.AreEqual("学习条亮后跑到终点，形成下一局的回声",
+        Assert.AreEqual("尝试选路、跳跃和滑铲，让回声认识你的跑法", menu.rule);
+        Assert.AreEqual("跑到终点；观察充分后形成下一局的回声",
             menu.objective);
         Assert.AreEqual("开始第一局", menu.primaryAction);
         AssertNoLegacyContractLanguage(menu);
@@ -32,17 +32,17 @@ public sealed class SingleContractMenuTests
             EchoRunPresentation.BuildSingleContractMenu(identity);
 
         Assert.AreEqual("第4代回声还在", menu.generation);
-        Assert.AreEqual("AI 还没看清你的路线习惯", menu.learned);
-        Assert.AreEqual("继续做不同动作和选路，让学习条变亮", menu.rule);
-        Assert.AreEqual("学习条亮后跑到终点；旧回声不会丢",
+        Assert.AreEqual("最近选路：还需要观察", menu.learned);
+        Assert.AreEqual("再跑一局补充观察；旧回声仍保留", menu.rule);
+        Assert.AreEqual("跑到终点；观察充分后更新下一局的回声",
             menu.objective);
         Assert.AreEqual("让它再观察一局", menu.primaryAction);
         AssertNoLegacyContractLanguage(menu);
     }
 
-    [TestCase(0, "左侧")]
-    [TestCase(1, "中间")]
-    [TestCase(2, "右侧")]
+    [TestCase(0, "偏左")]
+    [TestCase(1, "中路")]
+    [TestCase(2, "偏右")]
     public void PreciseMemoryShowsGenerationAndObservedRoute(
         int preferredLane, string expectedLane)
     {
@@ -56,11 +56,11 @@ public sealed class SingleContractMenuTests
             EchoRunPresentation.BuildSingleContractMenu(identity);
 
         Assert.AreEqual("第3代回声", menu.generation);
-        Assert.AreEqual("它记住了：压力出现时，你偏向" + expectedLane,
+        Assert.AreEqual("最近选路：" + expectedLane,
             menu.learned);
-        Assert.AreEqual("它猜中会抢先；连续两次骗过它，它会改猜",
+        Assert.AreEqual("预测路线通过会让回声抢先；连续两次反制通过后改猜",
             menu.rule);
-        Assert.AreEqual("先到终点，并把回声留在身后", menu.objective);
+        Assert.AreEqual("领先回声到终点", menu.objective);
         Assert.AreEqual("挑战第3代回声", menu.primaryAction);
         AssertNoLegacyContractLanguage(menu);
     }
@@ -80,9 +80,9 @@ public sealed class SingleContractMenuTests
             EchoRunPresentation.BuildSingleContractMenu(identity);
 
         Assert.AreEqual("第2代回声还在", menu.generation);
-        Assert.AreEqual("AI 还没看清你的路线习惯", menu.learned);
-        Assert.AreEqual("继续做不同动作和选路，让学习条变亮", menu.rule);
-        Assert.AreEqual("学习条亮后跑到终点；旧回声不会丢",
+        Assert.AreEqual("最近选路：还需要观察", menu.learned);
+        Assert.AreEqual("再跑一局补充观察；旧回声仍保留", menu.rule);
+        Assert.AreEqual("跑到终点；观察充分后更新下一局的回声",
             menu.objective);
         Assert.AreEqual("让它再观察一局", menu.primaryAction);
         StringAssert.DoesNotContain("左侧", VisibleText(menu));
@@ -121,9 +121,9 @@ public sealed class SingleContractMenuTests
             out string metrics, out string summary);
 
         StringAssert.Contains("第3代回声", metrics);
-        StringAssert.Contains("压力出现时，你偏向右侧", metrics);
-        StringAssert.Contains("连续两次骗过它", summary);
-        StringAssert.Contains("把回声留在身后", summary);
+        StringAssert.Contains("最近选路：偏右", metrics);
+        StringAssert.Contains("连续两次反制通过", summary);
+        StringAssert.Contains("领先回声到终点", summary);
         foreach (string forbidden in new[]
                  {
                      "至少跳跃", "至少滑铲", "侦测", "暴露", "反抗",

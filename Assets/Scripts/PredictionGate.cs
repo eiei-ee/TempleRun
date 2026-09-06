@@ -37,6 +37,16 @@ public enum GateExecutionOutcome
     Cancelled
 }
 
+public enum GateExecutionReason
+{
+    None,
+    Completed,
+    Collision,
+    RouteAbandoned,
+    Unresolved,
+    Cancelled
+}
+
 public enum PredictionGateLifecycle
 {
     Scheduled,
@@ -64,6 +74,10 @@ public sealed class GateAttempt
     public PredictionGateRole chosenRole;
     public StrategyKey strategyKey;
     public GateExecutionOutcome execution;
+    public GateExecutionReason executionReason;
+    public bool hasLateralEvidence;
+    public float lateralOffset;
+    public bool laneChangeInProgress;
     public bool predictionMatched;
     public float reactionTime;
     public float leadDeltaSeconds;
@@ -240,6 +254,8 @@ public sealed class PredictionGateController
     public StrategyKey CommittedStrategy { get; private set; }
     public GateExecutionOutcome ExecutionOutcome { get; private set; }
         = GateExecutionOutcome.None;
+    public GateExecutionReason ExecutionReason { get; private set; }
+        = GateExecutionReason.None;
     public float ReactionTime { get; private set; }
     public PredictionGateDefinition Definition => _definition.Clone();
 
@@ -294,7 +310,8 @@ public sealed class PredictionGateController
 
     public GateTransitionResult ResolveExecution(
         GateExecutionOutcome outcome, float speedAtResolution,
-        float memoryConfidence, out PredictionGateSettlement settlement)
+        float memoryConfidence, out PredictionGateSettlement settlement,
+        GateExecutionReason executionReason = GateExecutionReason.None)
     {
         if (outcome == GateExecutionOutcome.Cancelled)
             return Cancel(out settlement);
@@ -314,10 +331,11 @@ public sealed class PredictionGateController
             return GateTransitionResult.Rejected;
         }
 
-        ExecutionOutcome = outcome;
         _settlement = PredictionGateEvaluator.Evaluate(
             _definition.gateId, CommittedRole, outcome,
-            speedAtResolution, memoryConfidence);
+            speedAtResolution, memoryConfidence, executionReason);
+        ExecutionOutcome = outcome;
+        ExecutionReason = _settlement.executionReason;
         _hasSettlement = true;
         State = PredictionGateLifecycle.ExecutionResolved;
         settlement = _settlement;
@@ -375,6 +393,7 @@ public sealed class PredictionGateController
         ExecutionOutcome = GateExecutionOutcome.Cancelled;
         _settlement = PredictionGateEvaluator.Evaluate(
             _definition.gateId, role, GateExecutionOutcome.Cancelled, 0f, 0f);
+        ExecutionReason = _settlement.executionReason;
         _hasSettlement = true;
         State = PredictionGateLifecycle.Cancelled;
         settlement = _settlement;
@@ -400,6 +419,12 @@ public sealed class PredictionGateController
             strategyKey = HasChoice
                 ? CommittedStrategy : StrategyKey.Neutral,
             execution = ExecutionOutcome,
+            executionReason = ExecutionReason,
+            hasLateralEvidence = HasChoice
+                                 && CommittedChoice.hasLateralEvidence,
+            lateralOffset = HasChoice ? CommittedChoice.lateralOffset : 0f,
+            laneChangeInProgress = HasChoice
+                                   && CommittedChoice.laneChangeInProgress,
             predictionMatched = HasChoice
                                 && CommittedRole
                                 == PredictionGateRole.Predicted,

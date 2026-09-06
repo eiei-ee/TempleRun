@@ -110,6 +110,130 @@ public sealed class SingleContractProductionUiTests
         }
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public void RouteSymbolsRemainDistinctWithoutColorAndInsideTheSafeLaneArea(
+        bool finalGate)
+    {
+        var managerObject = new GameObject("RouteSymbol_Test");
+        var segment = new GameObject("RouteSymbolSegment_Test");
+        try
+        {
+            TrackManager manager = managerObject.AddComponent<TrackManager>();
+            manager.segmentLength = 20f;
+            manager.laneDistance = 3f;
+            var gate = new PredictionGateDefinition
+            {
+                gateId = 1,
+                sequence = 1,
+                isFinal = finalGate,
+                commitDistance = 96f,
+                resolveDistance = 104f,
+                lanes = new[]
+                {
+                    Lane(0, PredictionGateRole.Predicted),
+                    Lane(1, PredictionGateRole.Counter),
+                    Lane(2, PredictionGateRole.Neutral)
+                }
+            };
+            typeof(TrackManager).GetMethod("SpawnPredictionGateVisual",
+                    BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(manager, new object[] { segment, gate, 100f });
+            Transform root = segment.transform.Find(
+                TrackManager.PredictionGateVisualRootName);
+            Assert.IsNotNull(root);
+
+            for (int index = 0; index < root.childCount; index++)
+            {
+                Transform lane = root.GetChild(index);
+                Transform symbol = lane.Find("RoleSymbol");
+                Assert.IsNotNull(symbol, "Every route needs a non-color signal.");
+                AssertSymbolGeometry(symbol, gate.lanes[index].role);
+                float laneCenter = lane.localPosition.x;
+                float decisionFront = lane.Find("DecisionBand")
+                    .GetComponent<Renderer>().bounds.max.z;
+                foreach (MeshFilter mesh in symbol.GetComponentsInChildren<MeshFilter>())
+                {
+                    Assert.IsNotNull(mesh.sharedMesh);
+                    Assert.Greater(mesh.sharedMesh.vertexCount, 0);
+                    foreach (Vector3 vertex in mesh.sharedMesh.vertices)
+                    {
+                        Vector3 point = segment.transform.InverseTransformPoint(
+                            mesh.transform.TransformPoint(vertex));
+                        Assert.Less(Mathf.Abs(point.x - laneCenter),
+                            manager.laneDistance * 0.5f,
+                            "Symbol geometry must not spill into another route.");
+                        Assert.Greater(point.z, decisionFront,
+                            "The symbol must not merge with the decision stripe.");
+                        Assert.Less(point.z, gate.resolveDistance - 100f,
+                            "All symbol geometry must remain in the reserved area before the obstacle.");
+                        Assert.GreaterOrEqual(point.y,
+                            TrackGeometryStandards.AuthoredRoadSurfaceTopY
+                            + TrackManager.PredictionGateSurfaceClearance - 0.0001f,
+                            "Role symbols must remain above the opaque road surface.");
+                    }
+                }
+                foreach (Collider collider in symbol.GetComponentsInChildren<Collider>(true))
+                    Assert.IsFalse(collider.enabled,
+                        "Symbols must never add physical collisions, including during destruction.");
+            }
+        }
+        finally
+        {
+            Object.DestroyImmediate(segment);
+            Object.DestroyImmediate(managerObject);
+        }
+    }
+
+    private static void AssertSymbolGeometry(Transform symbol,
+        PredictionGateRole role)
+    {
+        // Infer the visible shape from actual segment endpoints. Object names
+        // and material colors cannot make an open arrow pass as a triangle.
+        int expectedStrokes = role == PredictionGateRole.Predicted ? 4
+            : role == PredictionGateRole.Counter ? 3 : 2;
+        Assert.AreEqual(expectedStrokes, symbol.childCount);
+        var ends = new System.Collections.Generic.List<Vector3>();
+        int horizontal = 0;
+        int vertical = 0;
+        foreach (Transform stroke in symbol)
+        {
+            Assert.IsNotNull(stroke.GetComponent<MeshRenderer>());
+            Assert.IsNotNull(stroke.GetComponent<MeshFilter>());
+            Vector3 from = symbol.InverseTransformPoint(stroke.TransformPoint(
+                new Vector3(0f, 0f, -0.5f)));
+            Vector3 to = symbol.InverseTransformPoint(stroke.TransformPoint(
+                new Vector3(0f, 0f, 0.5f)));
+            Vector3 delta = to - from;
+            Assert.Greater(delta.magnitude, 0.5f,
+                "A zero-length or tiny stroke does not carry a readable role.");
+            if (Mathf.Abs(delta.z) < 0.001f) horizontal++;
+            if (Mathf.Abs(delta.x) < 0.001f) vertical++;
+            ends.Add(from);
+            ends.Add(to);
+        }
+        Assert.AreEqual(role == PredictionGateRole.Counter ? 1 : 2, horizontal);
+        Assert.AreEqual(role == PredictionGateRole.Predicted ? 2 : 0, vertical);
+        if (role == PredictionGateRole.Neutral)
+        {
+            Vector3 nearCenter = (ends[0] + ends[1]) * 0.5f;
+            Vector3 farCenter = (ends[2] + ends[3]) * 0.5f;
+            Assert.Less(Mathf.Abs(nearCenter.x - farCenter.x), 0.001f);
+            Assert.Greater(Mathf.Abs(nearCenter.z - farCenter.z), 0.2f,
+                "The safe route must read as two parallel lines, not one broken line.");
+        }
+
+        int expectedIncidence = role == PredictionGateRole.Neutral ? 1 : 2;
+        foreach (Vector3 endpoint in ends)
+        {
+            int incidence = 0;
+            foreach (Vector3 other in ends)
+                if (Vector3.Distance(endpoint, other) < 0.001f) incidence++;
+            Assert.AreEqual(expectedIncidence, incidence,
+                "Prediction and counter shapes must close; safe strokes must remain separate.");
+        }
+    }
+
     [Test]
     public void ChallengeResultTitlesDescribeTheRaceWinner()
     {
@@ -139,14 +263,14 @@ public sealed class SingleContractProductionUiTests
                 RunEndReason.FinishReached, false, false));
         Assert.AreEqual("AI 看到了你的跑法",
             UIManager.GetSingleContractGameOverTitle(
-                "AI 看到了你的跑法\n这局观察不会带到下一局",
+                "AI 看到了你的跑法\n本局未形成新的回声；再跑一局，继续观察",
                 RunEndReason.FinishReached, false, false));
         Assert.AreEqual("回声保存失败",
             UIManager.GetSingleContractGameOverTitle(
                 AIShadowRunner.BuildSingleContractSaveFailureResult(
                     RunEndReason.FinishReached, false, false, 0),
                 RunEndReason.FinishReached, false, false));
-        Assert.AreEqual("回声保存失败",
+        Assert.AreEqual("你跑赢了第3代回声",
             UIManager.GetSingleContractGameOverTitle(
                 "你跑赢了第3代回声\n身份结算保存失败",
                 RunEndReason.FinishReached, true, true));
@@ -188,7 +312,7 @@ public sealed class SingleContractProductionUiTests
         StringAssert.Contains(
             "选路 2/5 · 通过 1/3 · 右路2/3", result);
         StringAssert.Contains("还没到终点", result);
-        StringAssert.Contains("这局观察不会带到下一局", result);
+        StringAssert.Contains("本局未形成新的回声；再跑一局，继续观察", result);
         StringAssert.DoesNotContain("未完成", result);
         StringAssert.DoesNotContain("草稿", result);
         StringAssert.DoesNotContain("失败", result);
@@ -266,7 +390,7 @@ public sealed class SingleContractProductionUiTests
 
         StringAssert.StartsWith("回声形成遇到问题", result);
         StringAssert.Contains("已经到终点", result);
-        StringAssert.Contains("学习条已经全亮", result);
+        StringAssert.Contains("观察已充分", result);
     }
 
     [Test]
@@ -355,9 +479,9 @@ public sealed class SingleContractProductionUiTests
             .BuildSingleContractCognitionSummary(assessment);
 
         Assert.AreEqual(
-            "它原本认为：压力时你偏向左侧\n"
-            + "这局你骗过它 4/6 次 · 从第3次选路起，它改猜了\n"
-            + "下一代已经改猜：压力时你偏向中间",
+            "此前记录：选路偏向左侧\n"
+            + "本局反制通过 4/6 次 · 从第3次选路起，后续预测已调整\n"
+            + "下一局记录：已更新为偏向中间",
             summary);
         foreach (string forbidden in new[]
                  {
@@ -445,8 +569,8 @@ public sealed class SingleContractProductionUiTests
 
         string summary = EchoRunPresentation
             .BuildSingleContractCognitionSummary(assessment);
-        StringAssert.Contains("这局你骗过它 1/6 次 · 它没有改猜", summary);
-        StringAssert.Contains("下一代没有改猜", summary);
+        StringAssert.Contains("本局反制通过 1/6 次 · 后续预测未调整", summary);
+        StringAssert.Contains("下一局记录：仍偏向左侧", summary);
     }
 
     [Test]
@@ -464,6 +588,66 @@ public sealed class SingleContractProductionUiTests
         Assert.IsFalse(assessment.IsAvailable);
         Assert.AreEqual(EchoCognitionChangeKind.Unavailable,
             assessment.ChangeKind);
+    }
+
+    [TestCase(GateExecutionReason.Completed, "成功通过")]
+    [TestCase(GateExecutionReason.Collision, "发生碰撞，通过未完成")]
+    [TestCase(GateExecutionReason.RouteAbandoned,
+        "离开原提交路线，通过未完成")]
+    [TestCase(GateExecutionReason.Unresolved,
+        "未取得通过证据，无法确认完成")]
+    [TestCase(GateExecutionReason.Cancelled,
+        "观察中断，通过结果未确认")]
+    public void GateReviewSeparatesSubmittedChoiceFromExecutionReason(
+        GateExecutionReason reason, string expectedExecution)
+    {
+        var attempt = new GateAttempt
+        {
+            gateId = 2,
+            committedLane = 2,
+            chosenRole = PredictionGateRole.Counter,
+            executionReason = reason,
+            hasLateralEvidence = true,
+            lateralOffset = 0.8f,
+            laneChangeInProgress = true
+        };
+
+        string review = EchoRunPresentation.BuildSingleContractGateReview(attempt);
+
+        Assert.AreEqual("关键选择：提交右路（反制），当时仍在换道\n动作结果："
+            + expectedExecution, review);
+        StringAssert.DoesNotContain("到达右路", review);
+        StringAssert.DoesNotContain("它猜中了", review);
+        StringAssert.DoesNotContain("本次不计", review);
+    }
+
+    [Test]
+    public void LegacyHitWithoutReasonDoesNotInventACollision()
+    {
+        string review = EchoRunPresentation.BuildSingleContractGateReview(
+            new GateAttempt
+            {
+                gateId = 1,
+                committedLane = 0,
+                chosenRole = PredictionGateRole.Predicted,
+                execution = GateExecutionOutcome.Hit
+            });
+
+        StringAssert.Contains("未取得通过证据", review);
+        StringAssert.DoesNotContain("碰撞", review);
+    }
+
+    [Test]
+    public void GateWithoutACommittedChoiceDoesNotProduceAReview()
+    {
+        Assert.IsEmpty(EchoRunPresentation.BuildSingleContractGateReview(null));
+        Assert.IsEmpty(EchoRunPresentation.BuildSingleContractGateReview(
+            new GateAttempt
+            {
+                gateId = 1,
+                committedLane = -1,
+                executionReason = GateExecutionReason.Cancelled
+            }));
     }
 
     private static PredictionGateLane Lane(int physicalLane,

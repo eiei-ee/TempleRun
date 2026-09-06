@@ -2,6 +2,20 @@ using NUnit.Framework;
 
 public sealed class EchoVisualCaptureProbeTests
 {
+    [TestCase("-echo-qa-offscreen-capture", true)]
+    [TestCase("-ECHO-QA-OFFSCREEN-CAPTURE", true)]
+    [TestCase("-echo-qa-offscreen-capture=false", false)]
+    [TestCase("-echo-qa-capture-distances=22", false)]
+    [TestCase(null, false)]
+    public void OffscreenRenderingRequiresTheExactExplicitFlag(
+        string argument, bool expected)
+    {
+        Assert.AreEqual(expected,
+            EchoVisualCaptureProbe.UsesOffscreenCapture(new[] { argument }));
+        Assert.IsFalse(EchoVisualCaptureProbe.UsesOffscreenCapture(null));
+        Assert.IsFalse(EchoVisualCaptureProbe.UsesOffscreenCapture(new string[0]));
+    }
+
     [Test]
     public void ParserRemainsDisabledWithoutTheExplicitArgument()
     {

@@ -29,13 +29,15 @@ public static class EchoHudPrefabBuilder
         GameObject staticLayer = Layer("HudStaticCanvas", root.transform, 10, false);
         GameObject dynamicLayer = Layer("HudDynamicCanvas", root.transform, 20, true);
 
-        Image topInformationRail = HorizontalBand("TopInformationRail",
-            staticLayer.transform, Backdrop, 12f, 12f, 8f, 48f);
+        Image topInformationRail = Panel("TopInformationRail", staticLayer.transform,
+            new Vector2(0f, 1f), new Vector2(360f, 124f),
+            new Vector2(16f, -16f), new Vector2(0f, 1f), Backdrop)
+            .GetComponent<Image>();
 
         Text stats = TextElement("StatsText", staticLayer.transform,
-            "SCORE 00000   RANGE 000m", 19, TextAnchor.MiddleLeft,
-            TextPrimary, new Vector2(0f, 1f), new Vector2(340f, 36f),
-            new Vector2(22f, -14f), new Vector2(0f, 1f));
+            "SCORE 00000   RANGE 000m", 16, TextAnchor.MiddleLeft,
+            TextMuted, new Vector2(0f, 1f), new Vector2(340f, 28f),
+            new Vector2(26f, -140f), new Vector2(0f, 1f));
         Image statsPlate = Panel("StatsPlate", stats.transform.parent,
             stats.rectTransform, Color.clear, true);
 
@@ -63,34 +65,34 @@ public static class EchoHudPrefabBuilder
         }
 
         GameObject calibrationRail = Panel("CalibrationRail", staticLayer.transform,
-            new Vector2(0.5f, 1f), new Vector2(320f, 34f),
-            new Vector2(0f, -15f), new Vector2(0.5f, 1f), Color.clear);
+            new Vector2(0f, 1f), new Vector2(332f, 34f),
+            new Vector2(26f, -100f), new Vector2(0f, 1f), Color.clear);
         Text calibrationObservation = TextStretch("CalibrationObservation",
             calibrationRail.transform, "路线  记录中    节奏  采集中", 19,
-            TextAnchor.MiddleCenter, TextMuted, Vector2.zero, Vector2.one);
+            TextAnchor.MiddleLeft, TextMuted, Vector2.zero, Vector2.one);
 
         Text distance = TextElement("DistanceText", staticLayer.transform,
-            "终点 700m", 19, TextAnchor.MiddleRight, TextMuted,
-            new Vector2(1f, 1f), new Vector2(160f, 36f),
-            new Vector2(-136f, -14f), new Vector2(1f, 1f));
+            "终点 700m", 20, TextAnchor.MiddleLeft, TextPrimary,
+            new Vector2(0f, 1f), new Vector2(332f, 36f),
+            new Vector2(26f, -64f), new Vector2(0f, 1f));
         Image distancePlate = Panel("DistancePlate", distance.transform.parent,
             distance.rectTransform, Color.clear, true);
 
         GameObject leadGroup = Panel("LeadGroup", staticLayer.transform,
-            new Vector2(0.5f, 0f), new Vector2(520f, 50f),
-            new Vector2(0f, 26f), new Vector2(0.5f, 0f), Backdrop);
+            new Vector2(0f, 1f), new Vector2(332f, 44f),
+            new Vector2(26f, -18f), new Vector2(0f, 1f), Color.clear);
         Image leadLine = ImageStretch("LeadLine", leadGroup.transform,
             new Color(Cyan.r, Cyan.g, Cyan.b, 0.28f),
-            new Vector2(0.08f, 0.34f), new Vector2(0.92f, 0.40f));
+            new Vector2(0f, 0.02f), new Vector2(1f, 0.045f));
         leadLine.raycastTarget = false;
         Image leadMarkerImage = ImageElement("LeadMarker", leadGroup.transform,
-            Cyan, new Vector2(0.5f, 0.37f), new Vector2(8f, 22f), Vector2.zero,
+            Cyan, new Vector2(0.5f, 0.03f), new Vector2(5f, 5f), Vector2.zero,
             new Vector2(0.5f, 0.5f));
         leadMarkerImage.raycastTarget = false;
         RectTransform leadMarker = leadMarkerImage.rectTransform;
-        Text leadText = TextStretch("LeadText", leadGroup.transform, "+0.0m", 19,
-            TextAnchor.UpperCenter, TextPrimary,
-            new Vector2(0.32f, 0.43f), new Vector2(0.68f, 0.98f));
+        Text leadText = TextStretch("LeadText", leadGroup.transform, "+0.0m", 24,
+            TextAnchor.MiddleLeft, TextPrimary,
+            Vector2.zero, Vector2.one);
 
         GameObject syncGroup = Panel("SyncGroup", staticLayer.transform,
             new Vector2(0f, 0f), new Vector2(260f, 54f),
@@ -117,51 +119,50 @@ public static class EchoHudPrefabBuilder
 
         GameObject announcementPlate = Panel("AnnouncementPlate",
             dynamicLayer.transform, new Vector2(0f, 1f), new Vector2(380f, 30f),
-            new Vector2(22f, -74f), new Vector2(0f, 1f),
+            new Vector2(22f, -176f), new Vector2(0f, 1f),
             EchoRunUITheme.HudMessageVeil);
         Text announcement = TextElement("Announcement", dynamicLayer.transform,
             "回声侦测", 19, TextAnchor.MiddleLeft, TextPrimary,
             new Vector2(0f, 1f), new Vector2(360f, 30f),
-            new Vector2(30f, -74f), new Vector2(0f, 1f));
+            new Vector2(30f, -176f), new Vector2(0f, 1f));
         GameObject directivePlate = Panel("DirectivePlate",
             dynamicLayer.transform, new Vector2(0f, 1f), new Vector2(500f, 40f),
-            new Vector2(22f, -108f), new Vector2(0f, 1f),
+            new Vector2(22f, -210f), new Vector2(0f, 1f),
             EchoRunUITheme.HudMessageVeil);
         Text directive = TextElement("Directive", dynamicLayer.transform,
             "复现中", 23, TextAnchor.MiddleLeft, TextPrimary,
             new Vector2(0f, 1f), new Vector2(480f, 38f),
-            new Vector2(30f, -109f), new Vector2(0f, 1f));
+            new Vector2(30f, -211f), new Vector2(0f, 1f));
         GameObject predictionPlate = Panel("PredictionPlate",
-            dynamicLayer.transform, new Vector2(0f, 1f), new Vector2(450f, 68f),
-            new Vector2(22f, -150f), new Vector2(0f, 1f),
+            dynamicLayer.transform, new Vector2(0f, 1f), new Vector2(330f, 40f),
+            new Vector2(22f, -254f), new Vector2(0f, 1f),
             EchoRunUITheme.HudPredictionVeil);
         Text prediction = TextElement("Prediction", dynamicLayer.transform,
             "预判右路", 20, TextAnchor.MiddleLeft, Coral,
-            new Vector2(0f, 1f), new Vector2(420f, 66f),
-            new Vector2(30f, -151f), new Vector2(0f, 1f));
+            new Vector2(0f, 1f), new Vector2(312f, 38f),
+            new Vector2(30f, -255f), new Vector2(0f, 1f));
         Image stateAccentBar = ImageElement("StateAccentBar",
             dynamicLayer.transform, EchoRunUITheme.WithAlpha(Cyan, 0.78f),
             new Vector2(0f, 1f), new Vector2(3f, 126f),
-            new Vector2(15f, -72f),
+            new Vector2(15f, -174f),
             new Vector2(0f, 1f));
         stateAccentBar.raycastTarget = false;
 
         GameObject meterGroup = Panel("MeterGroup", dynamicLayer.transform,
-            new Vector2(0.5f, 0.855f), new Vector2(520f, 34f), Vector2.zero,
-            new Vector2(0.5f, 0.5f), Backdrop);
+            new Vector2(0f, 1f), new Vector2(332f, 40f), new Vector2(26f, -22f),
+            new Vector2(0f, 1f), Backdrop);
         Text meterLabel = TextStretch("MeterLabel", meterGroup.transform,
             "稳定度", 16, TextAnchor.MiddleLeft, TextMuted,
-            new Vector2(0.03f, 0f), new Vector2(0.20f, 1f));
+            new Vector2(0.02f, 0f), new Vector2(0.49f, 1f));
         Image meterTrack = ImageStretch("MeterTrack", meterGroup.transform,
-            Rule, new Vector2(0.21f, 0.34f), new Vector2(0.96f, 0.66f));
+            Rule, new Vector2(0.51f, 0.40f), new Vector2(0.97f, 0.60f));
         meterTrack.raycastTarget = false;
         Image meterFill = ImageStretch("MeterFill", meterTrack.transform, Cyan,
-            Vector2.zero, Vector2.one);
+            Vector2.zero, new Vector2(0.5f, 1f));
         meterFill.raycastTarget = false;
-        meterFill.type = Image.Type.Filled;
-        meterFill.fillMethod = Image.FillMethod.Horizontal;
-        meterFill.fillOrigin = 0;
-        meterFill.fillAmount = 0.5f;
+        // A sprite-less Image ignores fillAmount when generating its mesh.
+        // This solid bar therefore uses its actual anchored width as progress.
+        meterFill.type = Image.Type.Simple;
 
         GameObject buffGroup = Panel("BuffGroup", dynamicLayer.transform,
             new Vector2(1f, 1f), new Vector2(300f, 36f),
@@ -170,14 +171,22 @@ public static class EchoHudPrefabBuilder
             "", 20, TextAnchor.MiddleLeft, TextPrimary,
             new Vector2(0.05f, 0f), new Vector2(0.95f, 1f));
 
+        GameObject feedbackObject = new GameObject("FeedbackGroup",
+            typeof(RectTransform), typeof(CanvasGroup));
+        feedbackObject.transform.SetParent(dynamicLayer.transform, false);
+        Stretch(feedbackObject.GetComponent<RectTransform>());
+        CanvasGroup feedbackGroup = feedbackObject.GetComponent<CanvasGroup>();
+        feedbackGroup.alpha = 0f;
+        feedbackGroup.interactable = false;
+        feedbackGroup.blocksRaycasts = false;
         GameObject feedbackPlate = Panel("FeedbackPlate",
-            dynamicLayer.transform, new Vector2(0f, 1f), new Vector2(500f, 34f),
-            new Vector2(22f, -226f), new Vector2(0f, 1f),
-            EchoRunUITheme.HudMessageVeil);
-        Text feedback = TextElement("Feedback", dynamicLayer.transform, "", 20,
+            feedbackObject.transform, new Vector2(0f, 1f), new Vector2(560f, 42f),
+            new Vector2(22f, -222f), new Vector2(0f, 1f),
+            EchoRunUITheme.HudPredictionVeil);
+        Text feedback = TextElement("Feedback", feedbackObject.transform, "", 20,
             TextAnchor.MiddleLeft, EchoRunUITheme.HudSuccessText,
             new Vector2(0f, 1f),
-            new Vector2(480f, 32f), new Vector2(30f, -227f),
+            new Vector2(540f, 40f), new Vector2(30f, -223f),
             new Vector2(0f, 1f));
 
         GameObject transitionFxObject = new GameObject("StateTransitionFx",
@@ -189,7 +198,7 @@ public static class EchoHudPrefabBuilder
         transitionFxRect.anchorMax = new Vector2(0f, 1f);
         transitionFxRect.pivot = new Vector2(0f, 1f);
         transitionFxRect.sizeDelta = new Vector2(520f, 140f);
-        transitionFxRect.anchoredPosition = new Vector2(18f, -70f);
+        transitionFxRect.anchoredPosition = new Vector2(18f, -174f);
         CanvasGroup transitionFx = transitionFxObject.GetComponent<CanvasGroup>();
         transitionFx.alpha = 0f;
         transitionFx.interactable = false;
@@ -245,11 +254,11 @@ public static class EchoHudPrefabBuilder
         Set(serialized, "buffGroup", buffGroup);
         Set(serialized, "buffText", buffText);
         Set(serialized, "feedbackText", feedback);
+        Set(serialized, "feedbackGroup", feedbackGroup);
         Set(serialized, "pauseButton", pause);
         SetArray(serialized, "skinPanels", new[]
         {
             topInformationRail,
-            leadGroup.GetComponent<Image>(),
             syncGroup.GetComponent<Image>(),
             markerGroup.GetComponent<Image>(),
             meterGroup.GetComponent<Image>(),
@@ -267,6 +276,7 @@ public static class EchoHudPrefabBuilder
         Set(serialized, "directivePlate", directivePlate);
         Set(serialized, "predictionPlate", predictionPlate);
         Set(serialized, "feedbackPlate", feedbackPlate);
+        Set(serialized, "stateAccentBar", stateAccentBar.gameObject);
         Set(serialized, "stateTransitionFx", transitionFx);
         Set(serialized, "transitionScanLine", transitionScan.rectTransform);
         Set(serialized, "fractureSliceA", fractureA.rectTransform);

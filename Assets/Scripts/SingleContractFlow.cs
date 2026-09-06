@@ -323,6 +323,9 @@ public sealed class SingleContractFlow : IEchoGameplayFlowRuntime
             {
                 gateId = definition.gateId,
                 physicalLane = frame.playerLane,
+                hasLateralEvidence = frame.hasLateralEvidence,
+                lateralOffset = frame.lateralOffset,
+                laneChangeInProgress = frame.laneChangeInProgress,
                 routeDistance = frame.playerDistance,
                 reactionTime = Math.Max(0f,
                     _lastElapsedTime - _activeGatePresentedElapsedTime)
@@ -333,9 +336,15 @@ public sealed class SingleContractFlow : IEchoGameplayFlowRuntime
             || frame.playerDistance < definition.exitDistance)
             return;
 
-        ResolveActiveGate(CommittedLaneRequiresObstacle(gate)
+        bool requiresObstacle = CommittedLaneRequiresObstacle(gate);
+        GateExecutionReason reason = !requiresObstacle
+            ? GateExecutionReason.Completed
+            : frame.playerLane != gate.CommittedChoice.physicalLane
+                ? GateExecutionReason.RouteAbandoned
+                : GateExecutionReason.Unresolved;
+        ResolveActiveGate(requiresObstacle
             ? GateExecutionOutcome.Hit
-            : GateExecutionOutcome.Success, _lastSpeed);
+            : GateExecutionOutcome.Success, _lastSpeed, reason);
     }
 
     public void OnGateChoiceCommitted(GateChoice choice)
@@ -491,17 +500,21 @@ public sealed class SingleContractFlow : IEchoGameplayFlowRuntime
             || !CommittedLaneRequiresObstacle(gate))
             return GateTransitionResult.Rejected;
 
-        return ResolveActiveGate(outcome, _lastSpeed);
+        return ResolveActiveGate(outcome, _lastSpeed,
+            outcome == GateExecutionOutcome.Hit
+                ? GateExecutionReason.Collision
+                : GateExecutionReason.Completed);
     }
 
     private GateTransitionResult ResolveActiveGate(
-        GateExecutionOutcome outcome, float speedAtResolution)
+        GateExecutionOutcome outcome, float speedAtResolution,
+        GateExecutionReason executionReason = GateExecutionReason.None)
     {
         PredictionGateController gate =
             _gatePlan.GetGate(_activeGateIndex);
         GateTransitionResult result = gate.ResolveExecution(outcome,
             speedAtResolution, _memoryConfidence,
-            out PredictionGateSettlement settlement);
+            out PredictionGateSettlement settlement, executionReason);
         if (result != GateTransitionResult.Applied
             && result != GateTransitionResult.AlreadyApplied)
             return result;

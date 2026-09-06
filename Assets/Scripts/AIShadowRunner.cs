@@ -169,6 +169,8 @@ public class AIShadowRunner : MonoBehaviour
         _singleContractFeedbackSequence;
     public float SingleContractFeedbackLeadDeltaMeters =>
         _singleContractFeedbackLeadDeltaMeters;
+    public bool SingleContractFeedbackRelearned =>
+        _singleContractFeedbackRelearned;
     public bool IsSingleContractOpeningMemory =>
         IsSingleContractRuntime() && HasActiveOpponent
         && _singleContractFlow != null
@@ -337,6 +339,8 @@ public class AIShadowRunner : MonoBehaviour
     private string _persistentIdentityJsonBeforeValidation = "";
     private SingleContractInstantFeedback _singleContractFeedback;
     private float _singleContractFeedbackLeadDeltaMeters;
+    private bool _singleContractFeedbackRelearned;
+    private GateAttempt _lastSingleContractGateAttempt;
     private int _singleContractFeedbackSequence;
     private int _nextSingleContractSettlementIndex;
     private readonly HashSet<int> _singleContractPresentedTelemetry =
@@ -409,7 +413,11 @@ public class AIShadowRunner : MonoBehaviour
                 currentSpeed = _gameManager.CurrentSpeed,
                 playerDistance = _gameManager.Distance,
                 remainingDistance = _gameManager.RemainingDistance,
-                playerLane = _player.CurrentLane
+                playerLane = _player.CurrentLane,
+                hasLateralEvidence = true,
+                lateralOffset = _player.LateralOffset,
+                laneChangeInProgress = Mathf.Abs(_player.LateralOffset
+                    - (_player.CurrentLane - 1) * _player.laneDistance) > 0.05f
             });
             CaptureSingleContractGateTelemetry();
             ConsumeSingleContractSettlements();
@@ -1013,6 +1021,8 @@ public class AIShadowRunner : MonoBehaviour
         _singleContractRelearnPulseTimer = 0f;
         _singleContractFeedback = SingleContractInstantFeedback.None;
         _singleContractFeedbackLeadDeltaMeters = 0f;
+        _singleContractFeedbackRelearned = false;
+        _lastSingleContractGateAttempt = null;
         _singleContractFeedbackSequence = 0;
         _nextSingleContractSettlementIndex = 0;
         _singleContractPresentedTelemetry.Clear();
@@ -1070,6 +1080,8 @@ public class AIShadowRunner : MonoBehaviour
         _singleContractRelearnPulseTimer = 0f;
         _singleContractFeedback = SingleContractInstantFeedback.None;
         _singleContractFeedbackLeadDeltaMeters = 0f;
+        _singleContractFeedbackRelearned = false;
+        _lastSingleContractGateAttempt = null;
         _singleContractFeedbackSequence = 0;
         _nextSingleContractSettlementIndex = 0;
         _singleContractPresentedTelemetry.Clear();
@@ -1779,6 +1791,7 @@ public class AIShadowRunner : MonoBehaviour
             endReason, challengedOpponent, playerWon, promotionBuilt,
             promotedIdentity, generationBefore, cognitionAssessment,
             calibrationProgress);
+        intendedResult = AppendSingleContractGateReview(intendedResult);
         LastResult = intendedResult;
 
         int runSequence = _runIdentityDraft != null
@@ -1831,6 +1844,7 @@ public class AIShadowRunner : MonoBehaviour
             LastResult = BuildSingleContractSaveFailureResult(
                 endReason, challengedOpponent, playerWon,
                 generationBefore, calibrationProgress);
+            LastResult = AppendSingleContractGateReview(LastResult);
             RecordSingleContractIdentityEvent(
                 AISingleContractEventType.IdentityCommitFailed,
                 oldIdentityId, newIdentityId, transactionId,
@@ -1887,6 +1901,7 @@ public class AIShadowRunner : MonoBehaviour
             ? BuildSingleContractValidationResult(endReason,
                 challengedOpponent, playerWon, generationBefore)
             : "固定验收隔离失败\n真实身份档发生意外变化";
+        LastResult = AppendSingleContractGateReview(LastResult);
         if (identityUnchanged)
         {
             Debug.Log("Single-contract validation settlement isolated: "
@@ -1976,7 +1991,7 @@ public class AIShadowRunner : MonoBehaviour
             if (challengedOpponent)
             {
                 return "第" + Mathf.Max(1, generationBefore)
-                       + "代回声胜出\n它还记得同样的你\n这局的新观察不会保留";
+                       + "代回声胜出\n本局未到终点\n下一局仍使用本代记录";
             }
             return EchoRunPresentation.BuildSingleContractCalibrationResult(
                 calibrationProgress);
@@ -2004,7 +2019,7 @@ public class AIShadowRunner : MonoBehaviour
         if (!playerWon)
         {
             return "第" + Mathf.Max(1, generationBefore)
-                   + "代回声胜出\n它还记得同样的你\n这局的新观察不会保留";
+                   + "代回声胜出\n本局未能领先到终点\n下一局仍使用本代记录";
         }
         if (!promotionBuilt || promotedIdentity == null)
         {
@@ -2022,6 +2037,13 @@ public class AIShadowRunner : MonoBehaviour
                + "代回声\n第" + promotedIdentity.generation
                + "代回声已经形成\n它记住了："
                + promotedIdentity.memoryContract.BuildMemoryText();
+    }
+
+    private string AppendSingleContractGateReview(string result)
+    {
+        string review = EchoRunPresentation.BuildSingleContractGateReview(
+            _lastSingleContractGateAttempt);
+        return string.IsNullOrEmpty(review) ? result : result + "\n" + review;
     }
 
     private void PromotePendingGeneration(int generation, float clarity)
@@ -2993,9 +3015,13 @@ public class AIShadowRunner : MonoBehaviour
                 ? gate.BuildAttempt() : null;
             if (attempt != null && attempt.committedLane >= 0)
             {
-                _runIdentityDraft?.RecordFormalGateChoice(
-                    settlement.gateId, attempt.committedLane,
-                    settlement.execution == GateExecutionOutcome.Success);
+                _lastSingleContractGateAttempt = attempt;
+                if (settlement.execution != GateExecutionOutcome.Cancelled)
+                {
+                    _runIdentityDraft?.RecordFormalGateChoice(
+                        settlement.gateId, attempt.committedLane,
+                        settlement.execution == GateExecutionOutcome.Success);
+                }
             }
 
             if (_runAdaptationState != null)
@@ -3035,8 +3061,9 @@ public class AIShadowRunner : MonoBehaviour
                 _runAdaptationState.predictedStrategy =
                     (int)StrategyKey.AvoidOriginal;
                 _singleContractRelearnPulseTimer = 1.25f;
-                SetSingleContractFeedback(
-                    SingleContractInstantFeedback.EchoRelearned);
+                // Keep this gate's choice/execution feedback and add its
+                // adaptation consequence to the same message and sequence.
+                _singleContractFeedbackRelearned = true;
                 RecordSingleContractGateEvent(
                     AISingleContractEventType.EchoRelearned, gate,
                     settlement, PlayerLead, PlayerLead, true);
@@ -3086,8 +3113,12 @@ public class AIShadowRunner : MonoBehaviour
                 ? SingleContractInstantFeedback.SafePass
                 : SingleContractInstantFeedback.None;
         }
+        if (settlement.executionReason == GateExecutionReason.Unresolved)
+            return SingleContractInstantFeedback.ObservationInconclusive;
         if (settlement.execution == GateExecutionOutcome.Hit)
-            return SingleContractInstantFeedback.CounterFailed;
+            return settlement.chosenRole == PredictionGateRole.Counter
+                ? SingleContractInstantFeedback.CounterFailed
+                : SingleContractInstantFeedback.ExecutionIncomplete;
         if (settlement.chosenRole == PredictionGateRole.Counter)
             return SingleContractInstantFeedback.RewriteSucceeded;
         if (settlement.chosenRole == PredictionGateRole.Predicted)
@@ -3143,6 +3174,7 @@ public class AIShadowRunner : MonoBehaviour
     {
         _singleContractFeedback = feedback;
         _singleContractFeedbackLeadDeltaMeters = leadDeltaMeters;
+        _singleContractFeedbackRelearned = false;
         _singleContractFeedbackSequence++;
     }
 
@@ -3224,6 +3256,10 @@ public class AIShadowRunner : MonoBehaviour
                 chosenRole = attempt.chosenRole,
                 strategyKey = attempt.strategyKey,
                 execution = attempt.execution,
+                executionReason = attempt.executionReason,
+                hasLateralEvidence = attempt.hasLateralEvidence,
+                lateralOffset = attempt.lateralOffset,
+                laneChangeInProgress = attempt.laneChangeInProgress,
                 reactionTime = attempt.reactionTime,
                 speedAtResolution = settlement.speedAtResolution,
                 secondsDelta = settlement.signedLeadSeconds,

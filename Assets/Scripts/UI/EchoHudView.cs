@@ -38,6 +38,7 @@ public sealed class EchoHudView : MonoBehaviour
     [SerializeField] private GameObject buffGroup;
     [SerializeField] private Text buffText;
     [SerializeField] private Text feedbackText;
+    [SerializeField] private CanvasGroup feedbackGroup;
     [SerializeField] private Button pauseButton;
 
     [Header("Cold White Fortress Skin")]
@@ -48,6 +49,7 @@ public sealed class EchoHudView : MonoBehaviour
     [SerializeField] private GameObject directivePlate;
     [SerializeField] private GameObject predictionPlate;
     [SerializeField] private GameObject feedbackPlate;
+    [SerializeField] private GameObject stateAccentBar;
 
     [Header("State Transition")]
     [SerializeField] private CanvasGroup stateTransitionFx;
@@ -69,6 +71,8 @@ public sealed class EchoHudView : MonoBehaviour
     private Vector2 _scanLineBase;
     private Vector2 _fractureSliceABase;
     private Vector2 _fractureSliceBBase;
+    private bool _layoutInitialized;
+    private bool _compactLayout;
 
     public Button PauseButton => pauseButton;
 
@@ -77,6 +81,8 @@ public sealed class EchoHudView : MonoBehaviour
 
     public void Present(EchoHudViewData data, bool showAnnouncement)
     {
+        ApplyModeLayout(false);
+        SetActiveIfChanged(stateAccentBar, true);
         ApplySkin(EchoRunUITheme.HudSkinFor(data.mode));
         bool calibrating = data.mode == EchoHudMode.Calibration;
         SetActiveIfChanged(stageRail, !calibrating);
@@ -124,6 +130,8 @@ public sealed class EchoHudView : MonoBehaviour
     public void PresentSingleContract(SingleContractHudData data,
         bool showAnnouncement)
     {
+        ApplyModeLayout(true);
+        SetActiveIfChanged(stateAccentBar, data.openingMemory);
         ApplySingleContractSkin(data.visualState, data.openingMemory);
         // Keep the persistent run shell visible from the first gameplay frame.
         // Opening memory is a foreground message, not a loading state.
@@ -142,10 +150,10 @@ public sealed class EchoHudView : MonoBehaviour
         SetActiveIfChanged(pauseButton != null
             ? pauseButton.gameObject : null, true);
 
-        SetTextIfChanged(directiveText, data.memory);
+        SetTextIfChanged(directiveText, data.openingMemory ? data.memory : "");
         SetActiveIfChanged(directiveText != null
-            ? directiveText.gameObject : null, data.showMemory);
-        SetActiveIfChanged(directivePlate, data.showMemory);
+            ? directiveText.gameObject : null, data.openingMemory);
+        SetActiveIfChanged(directivePlate, data.openingMemory);
         if (data.openingMemory)
         {
             bool showOpeningTitle = !string.IsNullOrEmpty(data.openingTitle);
@@ -166,19 +174,18 @@ public sealed class EchoHudView : MonoBehaviour
             PresentSingleContractLead(data);
             SetSyncCellsVisible(false);
             SetActiveIfChanged(buffGroup, false);
-            SetActiveIfChanged(feedbackText != null
-                ? feedbackText.gameObject : null, false);
-            SetActiveIfChanged(feedbackPlate, false);
+            ResetFeedbackPresentation();
             return;
         }
 
-        SetTextIfChanged(announcementText,
-            SingleContractAnnouncement(data.visualState));
+        // The opening owns the announcement slot. During the race all event
+        // copy goes through the single timed feedback slot below.
+        SetTextIfChanged(announcementText, "");
         SetActiveIfChanged(announcementText != null
-            ? announcementText.gameObject : null, showAnnouncement);
-        SetActiveIfChanged(announcementPlate, showAnnouncement);
-        string prediction = showCalibrationProgress
-            ? data.calibrationRouteProgress : data.prediction;
+            ? announcementText.gameObject : null, false);
+        SetActiveIfChanged(announcementPlate, false);
+        string prediction = !showCalibrationProgress && data.predictionGateActive
+            ? data.prediction : "";
         SetTextIfChanged(predictionText, prediction);
         SetColorIfChanged(predictionText, showCalibrationProgress
             ? _phaseAccent : EchoRunUITheme.HudDangerText);
@@ -188,8 +195,7 @@ public sealed class EchoHudView : MonoBehaviour
         SetActiveIfChanged(predictionPlate, showPrediction);
 
         SetTextIfChanged(calibrationObservationText,
-            showCalibrationProgress
-                ? data.calibrationActionProgress : data.injuriesText);
+            data.injuriesText);
         SetActiveIfChanged(calibrationObservationText != null
             ? calibrationObservationText.gameObject : null, true);
         SetTextIfChanged(distanceText, data.finishRemainingText);
@@ -210,20 +216,113 @@ public sealed class EchoHudView : MonoBehaviour
 
     public void SetStats(int score, float distance)
     {
-        SetTextIfChanged(statsText, string.Format(
+        SetTextIfChanged(statsText, _compactLayout
+            ? "分数 " + Mathf.Max(0, score) : string.Format(
             "SCORE {0:D5}   RANGE {1:000}m", Mathf.Max(0, score),
             Mathf.Max(0, Mathf.FloorToInt(distance))));
     }
 
+    private void ApplyModeLayout(bool compact)
+    {
+        if (_layoutInitialized && _compactLayout == compact) return;
+        _layoutInitialized = true;
+        _compactLayout = compact;
+        if (meterGroup != null)
+            SetLayout(meterGroup.GetComponent<RectTransform>(),
+                compact ? new Vector2(0f, 1f) : new Vector2(0.5f, 0.855f),
+                compact ? new Vector2(332f, 40f) : new Vector2(520f, 34f),
+                compact ? new Vector2(26f, -22f) : Vector2.zero,
+                compact ? new Vector2(0f, 1f) : new Vector2(0.5f, 0.5f));
+        if (predictionText != null)
+            SetLayout(predictionText.rectTransform, new Vector2(0f, 1f),
+                compact ? new Vector2(312f, 38f) : new Vector2(420f, 66f),
+                new Vector2(30f, compact ? -176f : -255f), new Vector2(0f, 1f));
+        if (predictionPlate != null)
+            SetLayout(predictionPlate.GetComponent<RectTransform>(), new Vector2(0f, 1f),
+                compact ? new Vector2(330f, 40f) : new Vector2(450f, 68f),
+                new Vector2(22f, compact ? -175f : -254f), new Vector2(0f, 1f));
+        if (feedbackText != null)
+            SetLayout(feedbackText.rectTransform, new Vector2(0f, 1f),
+                new Vector2(540f, 40f),
+                new Vector2(30f, compact ? -223f : -333f), new Vector2(0f, 1f));
+        if (feedbackPlate != null)
+            SetLayout(feedbackPlate.GetComponent<RectTransform>(), new Vector2(0f, 1f),
+                new Vector2(560f, 42f),
+                new Vector2(22f, compact ? -222f : -332f), new Vector2(0f, 1f));
+    }
+
+    private static void SetLayout(RectTransform rect, Vector2 anchor,
+        Vector2 size, Vector2 position, Vector2 pivot)
+    {
+        if (rect == null) return;
+        rect.anchorMin = anchor;
+        rect.anchorMax = anchor;
+        rect.pivot = pivot;
+        rect.sizeDelta = size;
+        rect.anchoredPosition = position;
+    }
+
     public void ShowFeedback(string text, Color color, bool visible)
+    {
+        bool show = visible && !string.IsNullOrEmpty(text);
+        PresentFeedback(text, color, show, show ? 1f : 0f);
+    }
+
+    private void PresentFeedback(string text, Color color, bool show, float alpha)
     {
         SetTextIfChanged(feedbackText, text);
         if (feedbackText != null && feedbackText.color != color)
             feedbackText.color = color;
-        bool show = visible && !string.IsNullOrEmpty(text);
+        SetFeedbackGroup(show, alpha);
         SetActiveIfChanged(feedbackText != null
             ? feedbackText.gameObject : null, show);
         SetActiveIfChanged(feedbackPlate, show);
+    }
+
+    public void ShowTimedFeedback(string text, Color color, float elapsed,
+        bool visible, bool reducedMotion)
+    {
+        bool show = visible && !string.IsNullOrEmpty(text)
+                    && elapsed >= 0f
+                    && elapsed < EchoRunPresentation.SingleContractFeedbackDurationSeconds;
+        PresentFeedback(text, color, show,
+            show ? FeedbackAlpha(elapsed, reducedMotion) : 0f);
+    }
+
+    public static float FeedbackAlpha(float elapsed, bool reducedMotion)
+    {
+        if (elapsed < 0f
+            || elapsed >= EchoRunPresentation.SingleContractFeedbackDurationSeconds)
+            return 0f;
+        if (reducedMotion) return 1f;
+        float fadeIn = EchoRunPresentation.SingleContractFeedbackFadeInSeconds;
+        float fadeOutStart = fadeIn
+                             + EchoRunPresentation.SingleContractFeedbackHoldSeconds;
+        if (elapsed < fadeIn) return Mathf.Clamp01(elapsed / fadeIn);
+        if (elapsed <= fadeOutStart) return 1f;
+        return Mathf.Clamp01((EchoRunPresentation.SingleContractFeedbackDurationSeconds
+                              - elapsed)
+                             / EchoRunPresentation.SingleContractFeedbackFadeOutSeconds);
+    }
+
+    public void ResetFeedbackPresentation()
+    {
+        ShowFeedback("", Color.white, false);
+    }
+
+    private void SetFeedbackGroup(bool visible, float alpha)
+    {
+        if (feedbackGroup == null) return;
+        feedbackGroup.alpha = alpha;
+        feedbackGroup.interactable = false;
+        feedbackGroup.blocksRaycasts = false;
+        SetActiveIfChanged(feedbackGroup.gameObject, visible);
+    }
+
+    private void OnDisable()
+    {
+        ResetFeedbackPresentation();
+        StopSingleContractTransition();
     }
 
     public void ApplySingleContractSkin(SingleContractVisualState state,
@@ -325,7 +424,7 @@ public sealed class EchoHudView : MonoBehaviour
         SetColors(skinRules, skin.rule, false);
         SetColors(phaseAccentRules, skin.accent, true);
 
-        SetColorIfChanged(statsText, skin.ink);
+        SetColorIfChanged(statsText, _compactLayout ? skin.mutedInk : skin.ink);
         SetColorIfChanged(announcementText, skin.ink);
         SetColorIfChanged(directiveText, skin.ink);
         SetColorIfChanged(predictionText, EchoRunUITheme.HudDangerText);
@@ -445,7 +544,7 @@ public sealed class EchoHudView : MonoBehaviour
             ? "校准" : data.meterKind == EchoHudMeterKind.Phase
                 ? "阶段" : "回声锁定";
         SetTextIfChanged(meterLabel, label);
-        SetFillIfChanged(meterFill, data.displayedMeter01);
+        SetMeterWidthIfChanged(meterFill, data.displayedMeter01);
         if (meterFill != null)
         {
             Color target = data.meterKind == EchoHudMeterKind.EchoLock
@@ -464,7 +563,7 @@ public sealed class EchoHudView : MonoBehaviour
         SingleContractHudData data)
     {
         SetTextIfChanged(meterLabel, data.calibrationMeterText);
-        SetFillIfChanged(meterFill, data.calibrationProgress01);
+        SetMeterWidthIfChanged(meterFill, data.calibrationProgress01);
         if (meterFill != null)
         {
             Color target = data.calibrationProgress01 >= 1f
@@ -490,8 +589,8 @@ public sealed class EchoHudView : MonoBehaviour
             float x = Mathf.Clamp01(data.leadPosition01);
             if (!Mathf.Approximately(anchor.x, x))
             {
-                leadMarker.anchorMin = new Vector2(x, 0.5f);
-                leadMarker.anchorMax = new Vector2(x, 0.5f);
+                leadMarker.anchorMin = new Vector2(x, 0.03f);
+                leadMarker.anchorMax = new Vector2(x, 0.03f);
             }
         }
     }
@@ -541,8 +640,8 @@ public sealed class EchoHudView : MonoBehaviour
             Vector2 anchor = leadMarker.anchorMin;
             if (!Mathf.Approximately(anchor.x, x))
             {
-                leadMarker.anchorMin = new Vector2(x, 0.5f);
-                leadMarker.anchorMax = new Vector2(x, 0.5f);
+                leadMarker.anchorMin = new Vector2(x, 0.03f);
+                leadMarker.anchorMax = new Vector2(x, 0.03f);
             }
         }
     }
@@ -599,12 +698,13 @@ public sealed class EchoHudView : MonoBehaviour
         if (target.text != safe) target.text = safe;
     }
 
-    private static void SetFillIfChanged(Image target, float value)
+    private static void SetMeterWidthIfChanged(Image target, float value)
     {
         if (target == null) return;
         float safe = Mathf.Clamp01(value);
-        if (!Mathf.Approximately(target.fillAmount, safe))
-            target.fillAmount = safe;
+        RectTransform rect = target.rectTransform;
+        Vector2 maximum = new Vector2(safe, 1f);
+        if (rect.anchorMax != maximum) rect.anchorMax = maximum;
     }
 
     private static void SetColors(Image[] targets, Color color,

@@ -9,17 +9,19 @@ public sealed class EchoVisualCaptureProbe : MonoBehaviour
 {
     public const string CaptureDistancesArgumentPrefix =
         "-echo-qa-capture-distances=";
+    public const string OffscreenCaptureArgument = "-echo-qa-offscreen-capture";
 
     private const string CaptureDirectoryName = "VisualCaptures";
     private const float DistanceTolerance = 0.0001f;
 
     private float[] _targetDistances;
+    private bool _offscreenCapture;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void CreateWhenExplicitlyRequested()
     {
-        float[] distances = ParseCaptureDistances(
-            Environment.GetCommandLineArgs());
+        string[] arguments = Environment.GetCommandLineArgs();
+        float[] distances = ParseCaptureDistances(arguments);
         if (distances.Length == 0) return;
 
         GameObject host = new GameObject("EchoVisualCaptureProbe_Runtime");
@@ -27,6 +29,7 @@ public sealed class EchoVisualCaptureProbe : MonoBehaviour
         EchoVisualCaptureProbe probe =
             host.AddComponent<EchoVisualCaptureProbe>();
         probe._targetDistances = distances;
+        probe._offscreenCapture = UsesOffscreenCapture(arguments);
     }
 
     private IEnumerator Start()
@@ -74,7 +77,10 @@ public sealed class EchoVisualCaptureProbe : MonoBehaviour
             string fileName = BuildCaptureFileName(targetDistance,
                 actualDistance, Screen.width, Screen.height);
             string capturePath = Path.Combine(outputDirectory, fileName);
-            ScreenCapture.CaptureScreenshot(capturePath);
+            if (_offscreenCapture)
+                CaptureOffscreen(capturePath);
+            else
+                ScreenCapture.CaptureScreenshot(capturePath);
             targetIndex++;
 
             // Give Unity a frame to submit the screenshot request before
@@ -126,6 +132,103 @@ public sealed class EchoVisualCaptureProbe : MonoBehaviour
         float[] result = new float[parsed.Count];
         parsed.CopyTo(result);
         return result;
+    }
+
+    public static bool UsesOffscreenCapture(string[] arguments)
+    {
+        if (arguments == null) return false;
+        foreach (string argument in arguments)
+        {
+            if (string.Equals(argument, OffscreenCaptureArgument,
+                    StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+        return false;
+    }
+
+    private static void CaptureOffscreen(string path)
+    {
+        Camera camera = Camera.main;
+        if (camera == null)
+            throw new InvalidOperationException(
+                "Offscreen visual capture requires the active gameplay camera.");
+
+        int width = Mathf.Max(1, Screen.width);
+        int height = Mathf.Max(1, Screen.height);
+        RenderTexture previousActive = RenderTexture.active;
+        RenderTexture previousTarget = camera.targetTexture;
+        int previousCullingMask = camera.cullingMask;
+        var overlayStates = new List<OverlayCanvasState>();
+        // Collect every state before changing a parent canvas, since a child
+        // can report a different effective render mode after that change.
+        foreach (Canvas canvas in FindObjectsOfType<Canvas>())
+        {
+            if (canvas.renderMode == RenderMode.ScreenSpaceOverlay)
+                overlayStates.Add(new OverlayCanvasState(canvas));
+        }
+
+        RenderTexture target = null;
+        Texture2D image = null;
+        try
+        {
+            target = RenderTexture.GetTemporary(width, height, 24,
+                RenderTextureFormat.ARGB32);
+            camera.targetTexture = target;
+            foreach (OverlayCanvasState state in overlayStates)
+            {
+                Canvas canvas = state.canvas;
+                canvas.renderMode = RenderMode.ScreenSpaceCamera;
+                canvas.worldCamera = camera;
+                canvas.planeDistance = camera.nearClipPlane + 0.01f;
+                // Overlay UI does not normally depend on camera culling.
+                foreach (Transform child in canvas.GetComponentsInChildren<Transform>(true))
+                    camera.cullingMask |= 1 << child.gameObject.layer;
+            }
+            Canvas.ForceUpdateCanvases();
+            camera.Render();
+            RenderTexture.active = target;
+            image = new Texture2D(width, height, TextureFormat.RGB24, false);
+            image.ReadPixels(new Rect(0f, 0f, width, height), 0, 0);
+            image.Apply();
+            File.WriteAllBytes(path, image.EncodeToPNG());
+            Debug.Log("ECHO_VISUAL_CAPTURE_OFFSCREEN camera=" + camera.name
+                      + " size=" + width + "x" + height + " path=" + path);
+        }
+        finally
+        {
+            for (int index = overlayStates.Count - 1; index >= 0; index--)
+                overlayStates[index].Restore();
+            camera.targetTexture = previousTarget;
+            camera.cullingMask = previousCullingMask;
+            RenderTexture.active = previousActive;
+            if (image != null) Destroy(image);
+            if (target != null) RenderTexture.ReleaseTemporary(target);
+            Canvas.ForceUpdateCanvases();
+        }
+    }
+
+    private readonly struct OverlayCanvasState
+    {
+        public readonly Canvas canvas;
+        private readonly RenderMode _renderMode;
+        private readonly Camera _worldCamera;
+        private readonly float _planeDistance;
+
+        public OverlayCanvasState(Canvas canvas)
+        {
+            this.canvas = canvas;
+            _renderMode = canvas.renderMode;
+            _worldCamera = canvas.worldCamera;
+            _planeDistance = canvas.planeDistance;
+        }
+
+        public void Restore()
+        {
+            if (canvas == null) return;
+            canvas.renderMode = _renderMode;
+            canvas.worldCamera = _worldCamera;
+            canvas.planeDistance = _planeDistance;
+        }
     }
 
     private static string CaptureOutputDirectory()

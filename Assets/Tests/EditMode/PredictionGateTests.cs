@@ -57,6 +57,10 @@ public sealed class PredictionGateTests
             gate.Cancel(out PredictionGateSettlement settlement));
         Assert.AreEqual(GateExecutionOutcome.Cancelled,
             settlement.execution);
+        Assert.AreEqual(GateExecutionReason.Cancelled,
+            settlement.executionReason);
+        Assert.AreEqual(GateExecutionReason.Cancelled,
+            gate.BuildAttempt().executionReason);
         Assert.AreEqual(0f, settlement.signedLeadMeters);
         Assert.AreEqual(GateTransitionResult.AlreadyApplied,
             gate.Cancel(out PredictionGateSettlement repeated));
@@ -120,6 +124,24 @@ public sealed class PredictionGateTests
         Assert.AreEqual(1.5f, low.playerLeadMeters, 0.00001f);
         Assert.AreEqual(1f, high.effectScale, 0.00001f);
         Assert.AreEqual(3.75f, high.playerLeadMeters, 0.00001f);
+    }
+
+    [TestCase(GateExecutionReason.None, GateExecutionReason.Unresolved)]
+    [TestCase(GateExecutionReason.Collision, GateExecutionReason.Collision)]
+    [TestCase(GateExecutionReason.RouteAbandoned,
+        GateExecutionReason.RouteAbandoned)]
+    [TestCase(GateExecutionReason.Unresolved, GateExecutionReason.Unresolved)]
+    public void FailureReasonPreservesScoringWithoutInventingACollision(
+        GateExecutionReason suppliedReason, GateExecutionReason expectedReason)
+    {
+        PredictionGateSettlement result = PredictionGateEvaluator.Evaluate(
+            1, PredictionGateRole.Counter, GateExecutionOutcome.Hit,
+            20f, 1f, suppliedReason);
+
+        Assert.AreEqual(expectedReason, result.executionReason);
+        Assert.AreEqual(GateExecutionOutcome.Hit, result.execution);
+        Assert.AreEqual(-9f, result.signedLeadMeters, 0.0001f);
+        Assert.IsFalse(result.IsCounterSuccess);
     }
 
     [Test]

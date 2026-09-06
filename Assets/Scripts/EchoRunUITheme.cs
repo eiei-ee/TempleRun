@@ -23,42 +23,46 @@ public struct EchoHudSkin
 
 public static class EchoRunUITheme
 {
-    public static readonly Color Backdrop = new Color32(10, 21, 35, 255);
-    public static readonly Color Surface = new Color32(22, 40, 59, 255);
-    public static readonly Color SurfaceRaised = new Color32(31, 55, 78, 255);
-    public static readonly Color SurfaceSelected = new Color32(18, 82, 105, 255);
-    public static readonly Color RouteCyan = new Color32(57, 215, 255, 255);
-    public static readonly Color RouteCyanDark = new Color32(14, 105, 132, 255);
-    public static readonly Color Reward = new Color32(240, 173, 61, 255);
+    public static readonly Color Backdrop = new Color32(20, 24, 31, 255);
+    public static readonly Color Surface = new Color32(30, 36, 45, 255);
+    public static readonly Color SurfaceRaised = new Color32(40, 48, 59, 255);
+    public static readonly Color SurfaceSelected = new Color32(50, 63, 80, 255);
+    // Keep the existing UI token names for callers; neutral blue-white now
+    // carries ordinary emphasis. Track and character materials are separate.
+    public static readonly Color RouteCyan = new Color32(193, 214, 239, 255);
+    public static readonly Color RouteCyanDark = new Color32(71, 90, 115, 255);
+    public static readonly Color ActionAccent = new Color32(238, 143, 76, 255);
+    public static readonly Color ActionAccentDark = new Color32(156, 79, 37, 255);
+    public static readonly Color Reward = new Color32(230, 169, 112, 255);
     public static readonly Color Danger = new Color32(255, 103, 90, 255);
-    public static readonly Color Success = new Color32(116, 226, 197, 255);
-    public static readonly Color TextPrimary = new Color32(232, 243, 248, 255);
-    public static readonly Color TextMuted = new Color32(165, 187, 200, 255);
-    public static readonly Color Ink = new Color32(5, 14, 22, 255);
+    public static readonly Color Success = new Color32(195, 216, 237, 255);
+    public static readonly Color TextPrimary = new Color32(235, 241, 249, 255);
+    public static readonly Color TextMuted = new Color32(156, 171, 190, 255);
+    public static readonly Color Ink = new Color32(16, 21, 29, 255);
 
     // The in-run HUD is one restrained floating instrument layer. Information
     // shares a dark translucent rail instead of becoming a stack of white
     // cards. Stage identity still belongs to the sparse accent geometry.
-    public static readonly Color HudPanel = new Color32(4, 10, 14, 164);
-    public static readonly Color HudPanelRaised = new Color32(8, 16, 21, 196);
+    public static readonly Color HudPanel = new Color32(17, 22, 29, 224);
+    public static readonly Color HudPanelRaised = new Color32(25, 32, 42, 204);
     public static readonly Color HudMessageVeil = new Color32(0, 0, 0, 0);
-    public static readonly Color HudPredictionVeil = new Color32(4, 10, 14, 216);
-    public static readonly Color HudInk = new Color32(238, 244, 246, 255);
-    public static readonly Color HudInkMuted = new Color32(170, 185, 189, 240);
-    public static readonly Color HudRule = new Color32(218, 232, 234, 46);
+    public static readonly Color HudPredictionVeil = new Color32(17, 22, 29, 220);
+    public static readonly Color HudInk = new Color32(235, 242, 251, 255);
+    public static readonly Color HudInkMuted = new Color32(166, 183, 204, 245);
+    public static readonly Color HudRule = new Color32(183, 204, 230, 32);
     public static readonly Color HudTextShadow = new Color32(0, 0, 0, 190);
     public static readonly Color HudDangerText = new Color32(255, 117, 104, 255);
-    public static readonly Color HudRewardText = new Color32(241, 181, 74, 255);
-    public static readonly Color HudSuccessText = new Color32(102, 220, 196, 255);
+    public static readonly Color HudRewardText = new Color32(241, 165, 106, 255);
+    public static readonly Color HudSuccessText = new Color32(191, 216, 243, 255);
 
     public static readonly Color HudCalibrationAccent =
-        new Color32(74, 143, 196, 255);
+        new Color32(133, 164, 199, 255);
     public static readonly Color HudChallengeAccent =
-        new Color32(20, 177, 177, 255);
+        new Color32(193, 214, 239, 255);
     public static readonly Color HudRelearnAccent =
-        new Color32(212, 70, 64, 255);
+        new Color32(238, 143, 76, 255);
     public static readonly Color HudFinaleAccent =
-        new Color32(224, 145, 45, 255);
+        new Color32(228, 178, 129, 255);
 
     public static Color WithAlpha(Color color, float alpha)
     {
@@ -115,7 +119,7 @@ public static class EchoRunUITheme
             mutedInk = HudInkMuted,
             rule = HudRule,
             accent = accent,
-            accentSoft = WithAlpha(accent, 0.22f),
+            accentSoft = WithAlpha(accent, 0.14f),
             transition = transition
         };
     }

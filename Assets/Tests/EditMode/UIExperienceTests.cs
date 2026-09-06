@@ -52,16 +52,16 @@ public sealed class UIExperienceTests
         Assert.AreEqual(new Vector2(520f, 104f), portraitRestart);
         Assert.AreEqual(new Vector2(280f, 60f), landscapeMenu);
         Assert.AreEqual(new Vector2(420f, 104f), portraitMenu);
-        Assert.AreEqual(new Vector2(1160f, 180f), landscapeResult);
+        Assert.AreEqual(new Vector2(1160f, 260f), landscapeResult);
         Assert.AreEqual(new Vector2(900f, 360f), portraitResult);
 
         AssertCenteredRectFits(new Vector2(0.5f, 0.255f),
             landscapeStart, landscape);
         AssertCenteredRectFits(new Vector2(0.5f, 0.255f),
             portraitStart, portrait);
-        AssertCenteredRectFits(new Vector2(0.5f, 0.38f),
+        AssertCenteredRectFits(new Vector2(0.5f, 0.40f),
             landscapeResult, landscape);
-        AssertCenteredRectFits(new Vector2(0.5f, 0.38f),
+        AssertCenteredRectFits(new Vector2(0.5f, 0.40f),
             portraitResult, portrait);
         AssertCenteredRectFits(new Vector2(0.5f, 0.18f),
             landscapeRestart, landscape);
@@ -329,6 +329,7 @@ public sealed class UIExperienceTests
             + "留在身后正在学跑法学够了去终点主动种类受伤红它猜的路青骗它的路白安全路"
             + "后续更新看到了这局观察不会带到下一局重新已经全亮没有形成遇到问题"
             + "本局结果整理变化同样不足当前保持不变原本认为压力偏向开始仍可能"
+            + "伤势再受伤即出局恢复中"
             + "《影迹》过去正在追上你米回声现身上一局学到×";
         foreach (char character in copy)
             Assert.IsTrue(font.HasCharacter(character), "UI font is missing: " + character);

@@ -6,6 +6,7 @@ public readonly struct PredictionGateSettlement
     public readonly int gateId;
     public readonly PredictionGateRole chosenRole;
     public readonly GateExecutionOutcome execution;
+    public readonly GateExecutionReason executionReason;
     public readonly float playerLeadSeconds;
     public readonly float echoLeadSeconds;
     public readonly float signedLeadSeconds;
@@ -19,11 +20,13 @@ public readonly struct PredictionGateSettlement
     public PredictionGateSettlement(int gateId,
         PredictionGateRole chosenRole, GateExecutionOutcome execution,
         float playerLeadSeconds, float echoLeadSeconds,
-        float speedAtResolution, float memoryConfidence, float effectScale)
+        float speedAtResolution, float memoryConfidence, float effectScale,
+        GateExecutionReason executionReason = GateExecutionReason.None)
     {
         this.gateId = gateId;
         this.chosenRole = chosenRole;
         this.execution = execution;
+        this.executionReason = executionReason;
         this.playerLeadSeconds = playerLeadSeconds;
         this.echoLeadSeconds = echoLeadSeconds;
         signedLeadSeconds = playerLeadSeconds - echoLeadSeconds;
@@ -49,7 +52,8 @@ public static class PredictionGateEvaluator
 
     public static PredictionGateSettlement Evaluate(int gateId,
         PredictionGateRole chosenRole, GateExecutionOutcome execution,
-        float speedAtResolution, float memoryConfidence)
+        float speedAtResolution, float memoryConfidence,
+        GateExecutionReason executionReason = GateExecutionReason.None)
     {
         if (!Enum.IsDefined(typeof(PredictionGateRole), chosenRole))
             throw new ArgumentOutOfRangeException(nameof(chosenRole));
@@ -57,6 +61,8 @@ public static class PredictionGateEvaluator
             && execution != GateExecutionOutcome.Hit
             && execution != GateExecutionOutcome.Cancelled)
             throw new ArgumentOutOfRangeException(nameof(execution));
+
+        executionReason = ResolveReason(execution, executionReason);
 
         float playerSeconds = 0f;
         float echoSeconds = 0f;
@@ -80,7 +86,26 @@ public static class PredictionGateEvaluator
             MinimumConfidenceScale, 1f, confidence);
         return new PredictionGateSettlement(
             Mathf.Max(0, gateId), chosenRole, execution,
-            playerSeconds, echoSeconds, speed, confidence, scale);
+            playerSeconds, echoSeconds, speed, confidence, scale,
+            executionReason);
+    }
+
+    private static GateExecutionReason ResolveReason(
+        GateExecutionOutcome execution, GateExecutionReason reason)
+    {
+        if (execution == GateExecutionOutcome.Success)
+            return GateExecutionReason.Completed;
+        if (execution == GateExecutionOutcome.Cancelled)
+            return GateExecutionReason.Cancelled;
+
+        // A legacy Hit carries a scoring result, not proof of a collision.
+        if (reason == GateExecutionReason.None)
+            return GateExecutionReason.Unresolved;
+        if (reason == GateExecutionReason.Collision
+            || reason == GateExecutionReason.RouteAbandoned
+            || reason == GateExecutionReason.Unresolved)
+            return reason;
+        throw new ArgumentOutOfRangeException(nameof(reason));
     }
 
     private static bool IsFinite(float value)

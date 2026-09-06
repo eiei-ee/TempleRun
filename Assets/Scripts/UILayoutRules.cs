@@ -92,7 +92,7 @@ public static class UILayoutRules
     {
         return IsCompactPortrait(width, height)
             ? new Vector2(900f, 360f)
-            : new Vector2(1160f, 180f);
+            : new Vector2(1160f, 260f);
     }
 
     public static Rect NormalizeSafeArea(Rect reported, int width, int height)
